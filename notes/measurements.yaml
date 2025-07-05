@@ -1,0 +1,135 @@
+base_link:
+  links:
+    measurement_units: mm
+    chassis:
+      description: main body of robot
+      make: null
+      model: null
+      shape: box
+      height: 620  # mm
+      width: 321   # mm
+      depth: 368   # mm
+      color: [0.2, 0.2, 0.8, 1.0]  # blue (r,g,b,a)
+      pose:
+        x: 0
+        y: 0
+        # center of chassis above base (chassis_height/2) = 330 mm 
+        # motor mount offset = 20 mm
+        # wheel radius (65/2) = 32.5 mm
+        # z = chassis height + motor mount offset + wheel radius
+        # z = 620/2 + 20 + 32.5
+        # z = 310 + 20 + 32.5 = 362.5 mm
+        # This is the height of the chassis above the ground
+        z: 362.5  # mm
+        roll: 0   # rad (chassis is level)
+        pitch: 0  # rad
+        yaw: 0    # rad
+    caster_wheel:
+      description: caster wheel
+      make: null
+      model: null
+      shape: cylinder
+      height: 40   # mm
+      width: 38    # mm
+      depth: 32    # mm
+      diameter: null
+      color: [0.5, 0.5, 0.5, 1.0]  # gray
+      pose:
+        # Position the caster at the rear of the chassis, offset by half the caster depth
+        # x = -chassis depth/2 + caster depth/2 
+        # x = -368/2 + 32/2 = -184 + 16 
+        # x = -168 
+        x: -168  # mm 
+        y: 0
+        # Front wheels distance from base to ground = mount offset + wheel diameter/2 = (20 + 65/2) = 20 + 32.5 = 52.5 mm
+        # To keep chassis level, caster wheel axis height needs to be offset to total 52.5 mm
+        # z = (52.5 - 40 ) + 40 
+        # z = 12.5 mm (caster total height is 40mm. Offset so chassis remains level with wheel axis)
+        z: 
+        roll: 0   # rad (caster is upright)
+        pitch: 0  # rad
+        yaw: 0    # rad
+    left_wheel:
+      description: left wheel
+      make: null
+      model: null
+      shape: cylinder
+      height: null
+      width: null
+      depth: 26    # mm
+      diameter: 65 # mm
+      color: [0.1, 0.7, 0.1, 1.0]  # green
+      pose:
+        # Position the wheel at the front of the chassis, offset by half the wheel depth
+        # x: 368/2 - 26/2 = 184 - 13 = 171; adjust for mounting, use 168
+        # y: 80; from chassis width/2 - wheel width/2 = 321/2 - 38/2 = 160.5 - 19 = 141.5; use 80 for symmetry
+        # z: wheel radius is diameter/2 + 20mm, wheel axis is 20mm below base, so z = 20
+        x: 168  # mm 
+        y: 80   
+        z: 20   
+        roll: 0   # rad (wheel axis is y, so wheel is upright)
+        pitch: 0  # rad
+        yaw: 1.5708    # rad (90 deg, so wheel can roll along x)
+    right_wheel:
+      description: right wheel
+      make: null
+      model: null
+      shape: cylinder
+      height: 40   # mm
+      width: 38    # mm
+      depth: 26    # mm
+      diameter: 65 # mm
+      color: [0.7, 0.1, 0.1, 1.0]  # red
+      pose:
+        x: 168  # mm (same as left_wheel)
+        y: -80  # mm (opposite side)
+        z: 20   # mm
+        roll: 0   # rad
+        pitch: 0  # rad
+        yaw: 1.5708    # rad (90 deg, so wheel can roll along x)
+    lidar:
+      description: lidar sensor, composed of base and sensor
+      make: SLAMTEC
+      model: RPLidar C1
+      color: [0.8, 0.8, 0.1, 1.0]  # yellow
+      lidar_base:
+        shape: box
+        height: 23.1   # mm
+        width: 55.6    # mm
+        depth: 55.6    # mm
+        color: [0.1, 0.1, 0.1, 1.0]  # dark gray
+        pose:
+          x: 0  # mm (centered)
+          y: 0  # mm (centered)
+          z: 641.55  # mm (chassis pose.z + chassis height/2 + lidar_base height/2 = 330 + 310 + 11.55 = 651.55)
+          roll: 0
+          pitch: 0
+          yaw: 0
+      lidar_sensor:
+        shape: cylinder
+        height: 18.2   # mm
+        diameter: 51   # mm
+        color: [0.8, 0.8, 0.1, 1.0]  # yellow
+        pose:
+          x: 0  # mm (centered)
+          y: 0  # mm (centered)
+          z: 662.65  # mm (lidar_base pose.z + lidar_base height/2 + lidar_sensor height/2 = 641.55 + 11.55 + 9.1 = 662.2)
+          roll: 0
+          pitch: 0
+          yaw: 0
+    depth_sensor:
+      description: depth sensor
+      make: Luxonis
+      model: OAK-D Lite
+      shape: box
+      height: 40    # mm
+      width: 38     # mm
+      depth: 32     # mm
+      color: [0.1, 0.7, 0.7, 1.0]  # cyan
+      pose:
+        x: 200  # mm (front face, chassis depth/2 + depth_sensor depth/2 = 184 + 16 = 200)
+        y: 0    # mm (centered)
+        z: 540  # mm (chassis pose.z + chassis height/4 = 330 + 155 = 485; adjust as needed)
+        roll: 0
+        pitch: 0
+        yaw: 0
