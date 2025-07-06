@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <!-- Gazebo DiffDrive plugin configuration for LabRobot -->
+
+    <gazebo>
+        <plugin name="gz::sim::systems::DiffDrive" filename="gz-sim-diff-drive-system">
+            <left_joint>left_wheel_to_base_link</left_joint>
+            <right_joint>right_wheel_to_base_link</right_joint>
+
+            <wheel_separation>${2 * wheelbase_y}</wheel_separation>
+            <wheel_radius>${wheel_radius}</wheel_radius>
+
+            <topic>/cmd_vel</topic>
+            <odom_topic>/odom</odom_topic>
+            <odom_publish>true</odom_publish>
+            <frame_id>odom</frame_id>
+            <child_frame_id>base_link</child_frame_id>
+            <update_rate>50</update_rate>
+            <publish_tf>true</publish_tf>
+            
+        </plugin>
+    </gazebo>
+</robot>

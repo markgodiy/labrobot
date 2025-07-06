@@ -3,6 +3,7 @@
 
     <xacro:include filename="inertial_macros.xacro" />
 
+
     <!-- MATERIALS -->
     <material name="black">
         <color rgba="0.1 0.1 0.1 1" />
@@ -55,15 +56,19 @@
 
     <!-- if tires are touching ground, then base is offset by 52.5mm    -->
     <xacro:property name="chassis_z"
-        value="${(chassis_height / 2) + motor_mount_offset - wheel_radius}" />
+        value="${(chassis_height / 2) + motor_mount_offset - wheel_radius}" 
+        />
 
     <!-- 
         origin should be center of the wheelbase axis, wheel radius from the front of the chassis
     -->
-    <xacro:property name="wheelbase_x" value="${(chassis_depth / 2) - wheel_radius}" />
-    <xacro:property name="wheelbase_y" value="${(chassis_width / 2) + (wheel_length/2)}" />
+    <xacro:property name="wheelbase_x" value="${chassis_depth / 2}" />
+    <xacro:property name="wheelbase_y" value="${chassis_width / 2}" />
+    <xacro:property name="wheel_y" value="${wheelbase_y + (wheel_length / 2)}" />
 
-    <!-- BASE LINK -->
+    <xacro:property name="caster_x" value="- ${chassis_width / 3} - ${wheel_radius}" />
+
+   <!-- BASE LINK -->
     <link name="base_link">
 
     </link>
@@ -95,89 +100,102 @@
         </xacro:inertial_box>
     </link>
 
+    <gazebo reference="chassis">
+        <material>Gazebo/Orange</material>
+    </gazebo>
+
     <!-- LEFT WHEEL Joint + Link -->
 
-    <joint name="left wheel_to_base_link" type="continuous">
+    <joint name="left_wheel_to_base_link" type="continuous">
         <parent link="base_link" />
         <child link="left_wheel" />
-        <origin xyz="${wheelbase_x} ${wheelbase_y} ${chassis_z}" rpy="0 0 0" />
-        <axis xyz="0 0 1" />
+        <origin xyz="-${wheel_radius} ${wheel_y} ${wheel_radius}" rpy="0 0 0" />
+        <axis xyz="0 1 0" />
     </joint>
 
     <link name="left_wheel">
         <visual>
-            <origin xyz="0 ${wheelbase_y} ${wheel_radius}" rpy="${pi/2} 0 0" />
+            <origin xyz="0 0 0" rpy="${pi/2} 0 0" />
             <geometry>
                 <cylinder radius="${wheel_radius}" length="${wheel_length}" />
             </geometry>
             <material name="blue" />
         </visual>
         <collision>
-            <origin xyz="0 ${wheelbase_y} ${wheel_radius}" rpy="${pi/2} 0 0" />
+            <origin xyz="0 0 0" rpy="${pi/2} 0 0" />
             <geometry>
                 <cylinder radius="${wheel_radius}" length="${wheel_length}" />
             </geometry>
         </collision>
         <xacro:inertial_cylinder mass="0.1" length="${wheel_length}" radius="${wheel_radius}">
-            <origin xyz="0 ${wheelbase_y} ${wheel_radius}" rpy="${pi/2} 0 0" />
+            <origin xyz="0 0 0" rpy="${pi/2} 0 0" />
         </xacro:inertial_cylinder>
     </link>
+
+    <gazebo reference="left_wheel">
+        <material>Gazebo/Blue</material>
+    </gazebo>
 
     <!-- RIGHT WHEEL Joint + Link -->
 
     <joint name="right_wheel_to_base_link" type="continuous">
         <parent link="base_link" />
         <child link="right_wheel" />
-        <!-- y is negative because of the left-handed coordinate system -->
-        <origin xyz="${wheelbase_x} -${wheelbase_y} ${chassis_z}" rpy="0 0 0" />
-        <axis xyz="0 0 1" />
+        <origin xyz="-${wheel_radius} -${wheel_y} ${wheel_radius}" rpy="0 0 0" />
+        <axis xyz="0 1 0" />
     </joint>
 
     <link name="right_wheel">
         <visual>
-            <origin xyz="0 -${wheelbase_y} ${wheel_radius}" rpy="${pi/2} 0 0" />
+            <origin xyz="0 0 0" rpy="${pi/2} 0 0" />
             <geometry>
                 <cylinder radius="${wheel_radius}" length="${wheel_length}" />
             </geometry>
             <material name="blue" />
         </visual>
         <collision>
-            <origin xyz="0 -${wheelbase_y} ${wheel_radius}" rpy="${pi/2} 0 0" />
+            <origin xyz="0 0 0" rpy="${pi/2} 0 0" />
             <geometry>
                 <cylinder radius="${wheel_radius}" length="${wheel_length}" />
             </geometry>
         </collision>
         <xacro:inertial_cylinder mass="0.1" length="${wheel_length}" radius="${wheel_radius}">
-            <origin xyz="0 -${wheelbase_y} ${wheel_radius}" rpy="${pi/2} 0 0" />
+            <origin xyz="0 0 0" rpy="${pi/2} 0 0" />
         </xacro:inertial_cylinder>
     </link>
 
-    <!-- CASTER WHEEL Joint + Link -->
+    <gazebo reference="right_wheel">
+        <material>Gazebo/Blue</material>
+    </gazebo>
 
-    <joint name="caster_wheel_to_base_link" type="continuous">
+    <!-- CASTER WHEEL (Spherical, for simulation stability) -->
+    <joint name="caster_wheel_joint" type="fixed">
         <parent link="base_link" />
         <child link="caster_wheel" />
-        <origin xyz="${wheelbase_x} 0 ${chassis_z}" rpy="0 0 0" />
-        <axis xyz="0 0 1" />
+        <origin xyz="-${(wheelbase_x * 2) - (wheel_radius)} 0 0.02" rpy="0 0 0" />
     </joint>
 
     <link name="caster_wheel">
         <visual>
-            <origin xyz="-${wheelbase_x * 2} 0 ${wheel_radius}" rpy="${pi/2} 0 0" />
             <geometry>
-                <cylinder radius="${wheel_radius}" length="${wheel_length}" />
+                <sphere radius="0.02" />
             </geometry>
-            <material name="blue" />
+            <material name="black" />
         </visual>
         <collision>
-            <origin xyz="-${wheelbase_x * 2} 0 ${wheel_radius}" rpy="${pi/2} 0 0" />
             <geometry>
-                <cylinder radius="${wheel_radius}" length="${wheel_length}" />
+                <sphere radius="0.02" />
             </geometry>
         </collision>
-        <xacro:inertial_cylinder mass="0.1" length="${wheel_length}" radius="${wheel_radius}">
-            <origin xyz="-${wheelbase_x * 2} 0 ${wheel_radius}" rpy="${pi/2} 0 0" />
-        </xacro:inertial_cylinder>
+        <xacro:inertial_sphere mass="0.1" radius="0.02">
+            <origin xyz="0 0 0" rpy="0 0 0" />
+        </xacro:inertial_sphere>
     </link>
-    <xacro:include filename="inertial_macros.xacro" />
+
+    <gazebo reference="caster_wheel">
+        <material>Gazebo/Blue</material>
+        <mu1 value="0.001" />
+        <mu2 value="0.001" />
+    </gazebo>
+
 </robot>

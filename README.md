@@ -1,4 +1,5 @@
 # Project Name: `LabRobot`
+# Model Number: TR45H
 
 Primary reference: Josh Newans' ROS2 Robot Build Guide
 
@@ -35,3 +36,27 @@ Primary reference: Josh Newans' ROS2 Robot Build Guide
   - LIDAR (SLAMTEC RPLIDAR C1)
   - Depth Camera (Luxonis OAK-D Lite)
   - IMU module (MPU6050)
+
+## Running the Simulation
+
+To launch the robot in Gazebo with the default world (ground plane and sun):
+
+```sh
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch labrobot sim.launch.py
+```
+
+- The launch file will:
+  - Start Gazebo with the default world
+  - Spawn the robot slightly above the ground
+  - Bridge common ROS 2 and Gazebo topics
+
+If you encounter issues with missing models or environment variables, try restarting WSL:
+
+```sh
+wsl --shutdown
+# Then reopen your Ubuntu terminal
+```
+
+If you see harmless warnings about QML or /clock, you can ignore them.
