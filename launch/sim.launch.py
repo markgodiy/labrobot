@@ -25,15 +25,6 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_description, 'use_sim_time': use_sim_time}]
     )
 
-    # Create a joint_state_publisher_gui node
-    node_joint_state_publisher_gui = Node(
-        package='joint_state_publisher_gui',
-        executable='joint_state_publisher_gui',
-        name='joint_state_publisher_gui',
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
-
     # Launch Gazebo (gz sim) with default world (ground plane and sun)
     gazebo = ExecuteProcess(
         cmd=['gz', 'sim', '-v', '4', '/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/worlds/empty.sdf'],
@@ -69,7 +60,6 @@ def generate_launch_description():
             description='Use sim time if true'),
 
         node_robot_state_publisher,
-        node_joint_state_publisher_gui,
         gazebo,
         bridge,
         spawn_entity

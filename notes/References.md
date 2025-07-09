@@ -11,3 +11,23 @@ https://automaticaddison.com/the-ultimate-guide-to-the-ros-2-navigation-stack/
 - AutomaticAddison YouTube Channel
 https://www.youtube.com/@automaticaddison/featured
     - **Summary:** The AutomaticAddison YouTube channel offers free, practical robotics tutorials focused on ROS 2, mobile robot navigation, and real-world robotics skills. Videos range from beginner to advanced topics, including hands-on demonstrations, simulation, and code walkthroughs. The channel is designed to help viewers become job-ready in robotics without unnecessary theory or paid courses, making it a valuable resource for both students and professionals.
+
+- DepthAI Manual Install – Supported Platforms
+https://docs.luxonis.com/software/depthai/manual-install#supported-platforms
+    - **Summary:** This official documentation page from Luxonis details the manual installation process for the DepthAI library, including supported platforms (Windows, macOS, Linux, Raspberry Pi, Jetson), prerequisites, and troubleshooting tips. It provides step-by-step instructions for installing DepthAI via pip or from source, as well as guidance for setting up udev rules on Linux for proper USB device access. This resource is essential for anyone integrating OAK-D or other Luxonis devices with Python or ROS 2.
+
+- Luxonis Documentation Portal
+https://docs.luxonis.com/
+    - **Summary:** The official documentation portal for Luxonis devices, including OAK-D, OAK-D Lite, and DepthAI. It provides comprehensive guides, API references, hardware setup instructions, ROS/ROS 2 integration, and troubleshooting resources for all Luxonis products. Essential for development, testing, and deployment with Luxonis vision hardware.
+
+- Running DepthAI Demo in WSL (Luxonis Forum)
+https://discuss.luxonis.com/d/693-i-got-depthai-demo-to-run-in-wsl
+    - **Summary:** A community forum thread where users share their experiences and solutions for running the DepthAI demo in Windows Subsystem for Linux (WSL). Includes troubleshooting tips, environment setup, and workarounds for common issues encountered when using OAK-D and DepthAI in WSL environments.
+
+- usbipd-win (USB device passthrough for WSL 2)
+https://github.com/dorssel/usbipd-win
+    - **Summary:** Official repository for usbipd-win, a Windows service and CLI tool that enables USB device passthrough from Windows to WSL 2. Essential for using hardware like RPLIDAR, OAK-D, and other USB peripherals directly in WSL. Includes installation instructions, usage examples, and troubleshooting tips.
+
+- Microsoft Docs: Connect USB devices to WSL 2
+https://learn.microsoft.com/en-us/windows/wsl/connect-usb
+    - **Summary:** Official Microsoft documentation for connecting USB devices to Windows Subsystem for Linux (WSL 2). Explains requirements, setup, and usage of usbipd-win, with troubleshooting and security notes. Essential for anyone using USB hardware with WSL 2.

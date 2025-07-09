@@ -94,7 +94,7 @@
                 <box size="${chassis_depth} ${chassis_width} ${chassis_height}" />
             </geometry>
         </collision>
-        <xacro:inertial_box mass="2.0" x="${chassis_depth}" y="${chassis_width}"
+        <xacro:inertial_box mass="7.5" x="${chassis_depth}" y="${chassis_width}"
             z="${chassis_height}">
             <origin xyz="-${wheelbase_x} 0 ${chassis_z}" rpy="0 0 0" />
         </xacro:inertial_box>
