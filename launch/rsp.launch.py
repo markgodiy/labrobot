@@ -53,7 +53,7 @@ def generate_launch_description():
     serial_port = LaunchConfiguration('serial_port', default='/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_f4ff8904fb63ef118309e1a9c169b110-if00-port0')
     serial_baudrate = LaunchConfiguration('serial_baudrate', default='460800')
     frame_id = LaunchConfiguration('frame_id', default='lidar_frame')  # Use your robot's frame
-    inverted = LaunchConfiguration('inverted', default='true')
+    inverted = LaunchConfiguration('inverted', default='false')
     angle_compensate = LaunchConfiguration('angle_compensate', default='true')
     scan_mode = LaunchConfiguration('scan_mode', default='Standard')
 
