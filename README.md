@@ -1,6 +1,7 @@
 # Project Name: LabRobot
 # Model/Codename: TR45H
 
+![robot](notes/images/header.png)
 
 Primary reference: Josh Newans' ROS2 Robot Build Guide
 
