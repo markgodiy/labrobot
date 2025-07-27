@@ -1,16 +1,21 @@
 # Project Name: LabRobot
 # Model/Codename: TR45H
 
+
 Primary reference: Josh Newans' ROS2 Robot Build Guide
 
 * [https://www.youtube.com/watch?v=OWeLUSzxMsw\&list=PLunhqkrRNRhYAffV8JDiFOatQXuU-NnxT](https://www.youtube.com/watch?v=OWeLUSzxMsw&list=PLunhqkrRNRhYAffV8JDiFOatQXuU-NnxT)
 * [https://articulatedrobotics.xyz/category/build-a-mobile-robot-with-ros](https://articulatedrobotics.xyz/category/build-a-mobile-robot-with-ros)
 
-Objective:
+## Objective:
 Build a differential-drive mobile robot designed to deliver specimens to multiple locations within a laboratory environment.
 The robot must be capable of mapping its environment, navigating autonomously, avoiding obstacles in real time, and supporting manual control via remote or phone interface.
 
-Core Applications:
+## Updates:
+- 27Jul2025: [update](/docs/README.md#2025-07-27-update)
+
+
+## Core Applications:
 
 * Differential-drive control using ros2\_control
 * Mapping and localization using SLAM (slam\_toolbox)
