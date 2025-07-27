@@ -9,7 +9,7 @@
     <joint name="lidar_joint" type="fixed">
         <parent link="base_link" />
         <child link="lidar_frame" />
-        <origin xyz="${chassis_depth/2 - (lidar_sensor_diameter)} 0 ${chassis_height + 0.060}" rpy="0 0 0" />
+        <origin xyz="${chassis_depth/2 - (lidar_sensor_diameter)} 0 ${chassis_height + 0.060}" rpy="0 0 3.14" />
     </joint>
 
     <link name="lidar_frame">

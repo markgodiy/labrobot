@@ -25,11 +25,11 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_description, 'use_sim_time': use_sim_time}]
     )
 
-    # Create a joint_state_publisher_gui node
-    node_joint_state_publisher_gui = Node(
-        package='joint_state_publisher_gui',
-        executable='joint_state_publisher_gui',
-        name='joint_state_publisher_gui',
+    # Create a joint_state_publisher node (non-GUI)
+    node_joint_state_publisher = Node(
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
         output='screen',
         parameters=[{'use_sim_time': use_sim_time}]
     )
@@ -75,7 +75,11 @@ def generate_launch_description():
 
     # Launch!
     return LaunchDescription([
-        DeclareLaunchArgument('use_sim_time', default_value='false', description='Use sim time if true'),
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='false',
+            description='Use sim time if true'),
+
         DeclareLaunchArgument('channel_type', default_value=channel_type, description='Specifying channel type of lidar'),
         DeclareLaunchArgument('serial_port', default_value=serial_port, description='Specifying usb port to connected lidar'),
         DeclareLaunchArgument('serial_baudrate', default_value=serial_baudrate, description='Specifying usb port baudrate to connected lidar'),
@@ -83,8 +87,9 @@ def generate_launch_description():
         DeclareLaunchArgument('inverted', default_value=inverted, description='Specifying whether or not to invert scan data'),
         DeclareLaunchArgument('angle_compensate', default_value=angle_compensate, description='Specifying whether or not to enable angle_compensate of scan data'),
         DeclareLaunchArgument('scan_mode', default_value=scan_mode, description='Specifying scan mode of lidar'),
+
         node_robot_state_publisher,
-        node_joint_state_publisher_gui,
+        node_joint_state_publisher,
         bridge,
         rplidar_node
     ])

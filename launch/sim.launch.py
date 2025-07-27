@@ -25,6 +25,15 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_description, 'use_sim_time': use_sim_time}]
     )
 
+    # Create a joint_state_publisher node (non-GUI)
+    node_joint_state_publisher = Node(
+        package='joint_state_publisher',
+        executable='joint_state_publisher',
+        name='joint_state_publisher',
+        output='screen',
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # Launch Gazebo (gz sim) with default world (ground plane and sun)
     gazebo = ExecuteProcess(
         cmd=['gz', 'sim', '-v', '4', '/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/worlds/empty.sdf'],
@@ -89,6 +98,7 @@ def generate_launch_description():
         DeclareLaunchArgument('angle_compensate', default_value=angle_compensate, description='Specifying whether or not to enable angle_compensate of scan data'),
         DeclareLaunchArgument('scan_mode', default_value=scan_mode, description='Specifying scan mode of lidar'),
         node_robot_state_publisher,
+        node_joint_state_publisher,
         gazebo,
         bridge,
         spawn_entity,

@@ -11,6 +11,13 @@ Hardware:
 
 TODO: Add Bill of Materials (BOM) for the LabRobot project.
 
+## 2025-07-27
+- 23 days later
+- finally 3D printed the base and lidar + camera mount
+- did a lot of learning about basic wiring and electronics; rewired things a few times
+- using a Pico + micropython to control the motors and (read the encoders)
+- got the Slamtec C1 LIDAR working with ROS 2 Jazzy
+
 ## 2025-07-04 
 - Restarting project, targeting ROS2 Jazzy LTS and Gazebo Harmonic LTS. 
 - Jazzy Jalisco (May 2024 - May 2029)
