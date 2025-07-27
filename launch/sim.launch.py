@@ -47,21 +47,50 @@ def generate_launch_description():
             '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
             '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
-            '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V'
+            '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V',
+            '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan'  # <-- Added bridge for LIDAR
+        ],
+        output='screen'
+    )
+
+    # RPLIDAR node configuration
+    channel_type = LaunchConfiguration('channel_type', default='serial')
+    serial_port = LaunchConfiguration('serial_port', default='/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_f4ff8904fb63ef118309e1a9c169b110-if00-port0')
+    serial_baudrate = LaunchConfiguration('serial_baudrate', default='460800')
+    frame_id = LaunchConfiguration('frame_id', default='lidar_frame')  # Use your robot's frame
+    inverted = LaunchConfiguration('inverted', default='false')
+    angle_compensate = LaunchConfiguration('angle_compensate', default='true')
+    scan_mode = LaunchConfiguration('scan_mode', default='Standard')
+
+    rplidar_node = Node(
+        package='sllidar_ros2',
+        executable='sllidar_node',
+        name='sllidar_node',
+        parameters=[
+            {'channel_type': channel_type},
+            {'serial_port': serial_port},
+            {'serial_baudrate': serial_baudrate},
+            {'frame_id': frame_id},
+            {'inverted': inverted},
+            {'angle_compensate': angle_compensate},
+            {'scan_mode': scan_mode}
         ],
         output='screen'
     )
 
     # Launch!
     return LaunchDescription([
-        DeclareLaunchArgument(
-            'use_sim_time',
-            default_value='false',
-            description='Use sim time if true'),
-
+        DeclareLaunchArgument('use_sim_time', default_value='false', description='Use sim time if true'),
+        DeclareLaunchArgument('channel_type', default_value=channel_type, description='Specifying channel type of lidar'),
+        DeclareLaunchArgument('serial_port', default_value=serial_port, description='Specifying usb port to connected lidar'),
+        DeclareLaunchArgument('serial_baudrate', default_value=serial_baudrate, description='Specifying usb port baudrate to connected lidar'),
+        DeclareLaunchArgument('frame_id', default_value=frame_id, description='Specifying frame_id of lidar'),
+        DeclareLaunchArgument('inverted', default_value=inverted, description='Specifying whether or not to invert scan data'),
+        DeclareLaunchArgument('angle_compensate', default_value=angle_compensate, description='Specifying whether or not to enable angle_compensate of scan data'),
+        DeclareLaunchArgument('scan_mode', default_value=scan_mode, description='Specifying scan mode of lidar'),
         node_robot_state_publisher,
         gazebo,
         bridge,
-        spawn_entity
-        
+        spawn_entity,
+        rplidar_node  # Add the RPLIDAR node
     ])

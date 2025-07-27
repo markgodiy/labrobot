@@ -39,11 +39,32 @@ mpremote mip install <package...> -- Install packages (from micropython-lib or t
 mpremote help                     -- print list of commands and exit
 ```
 
-## Usage
+#### Example Usage
+
+```bash
+mpremote
+mpremote a1
+mpremote connect /dev/ttyUSB0 repl
+mpremote ls
+mpremote a1 ls
+mpremote exec "import micropython; micropython.mem_info()"
+mpremote eval 1/2 eval 3/4
+mpremote mount .
+mpremote mount . exec "import local_script"
+mpremote ls
+mpremote cat boot.py
+mpremote cp :main.py .
+mpremote cp main.py :
+mpremote cp -r dir/ :
+mpremote sha256sum :main.py
+mpremote mip install aioble
+mpremote mip install github:org/repo@branch
+mpremote mip install gitlab:org/repo@branch
+```
 
 ### Listing Devices
 
-To list connected micropython devices, use the following command:
+To list serial devices, use the following command:
 
 ```bash
 $ mpremote connect list
@@ -62,4 +83,38 @@ To connect to a specific device, use the `connect` command followed by the devic
 mpremote connect a0
 ```
 
-### 
+### Copy Files to the Device
+
+To copy files to the device, use the `fs cp` command. For example, to copy a file named `main.py` to the root directory of the device:
+
+
+```bash
+mpremote cp path/to/main.py :
+```
+
+example:
+```bash
+mpremote cp main.py :
+```
+
+### Copy files from the Device
+
+To copy files from the device to your local machine, use the `fs cp` command with the device path prefixed by a colon. For example, to copy a file named `main.py` from the device to the current directory:
+
+```bash
+mpremote cp :main.py .
+```
+
+### reset the device
+
+To reset the device, you can use the `exec` command to run a reset command. For example, to reset a MicroPython device, you can use:
+
+```bash
+mpremote exec "import machine; machine.reset()"
+```
+
+or 
+
+```bash
+mpremote a0 reset
+```
