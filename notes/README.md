@@ -15,8 +15,15 @@ TODO: Add Bill of Materials (BOM) for the LabRobot project.
 - 23 days later
 - finally 3D printed the base and lidar + camera mount
 - did a lot of learning about basic wiring and electronics; rewired things a few times
-- using a Pico + micropython to control the motors and (read the encoders)
+- using a Pico(W) + micropython to control the motors and (read the encoders). I just happened to have a Pico W lying around but a non-W Pico would work just as well. 
 - got the Slamtec C1 LIDAR working with ROS 2 Jazzy
+- Had to rotate the z-axis of the lidar joint by 3.14 radians (180 degrees) to get it to point in the right direction. Apparently this is a common issue. (figure1)
+- Since I'm using a PicoW, I added a web server to the robot movement for testing. The micropython code will change later for use with ROS2. see: [main.py](../upython/main.py)
+- 
+![Figure1. lidar](images/lidar_plane.png)
+
+![Figure2. server](images/picow_web_interface.png)
+
 
 ## 2025-07-04 
 - Restarting project, targeting ROS2 Jazzy LTS and Gazebo Harmonic LTS. 
