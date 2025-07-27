@@ -130,9 +130,9 @@ def start_server():
         <button onmousedown="startCmd('/forward')" onmouseup="stopCmd()" ontouchstart="startCmd('/forward')" ontouchend="stopCmd()">Forward</button>
     </div>
     <div class='row'>
-        <button onmousedown="startCmd('/left')" onmouseup="stopCmd()" ontouchstart="startCmd('/left')" ontouchend="stopCmd()"> Rotate_Left</button>
+        <button onmousedown="startCmd('/left')" onmouseup="stopCmd()" ontouchstart="startCmd('/left')" ontouchend="stopCmd()">Rotate_Left</button>
         <button onclick="stopCmd()" style='background-color:#f44336;color:white;'>■ Stop</button>
-        <button onmousedown="startCmd('/right')" onmouseup="stopCmd()" ontouchstart="startCmd('/right')" ontouchend="stopCmd()" Rotate_Right</button>
+        <button onmousedown="startCmd('/right')" onmouseup="stopCmd()" ontouchstart="startCmd('/right')" ontouchend="stopCmd()">Rotate_Right</button>
     </div>
     <div class='row'>
         <button onmousedown="startCmd('/backward')" onmouseup="stopCmd()" ontouchstart="startCmd('/backward')" ontouchend="stopCmd()">Reverse</button>
