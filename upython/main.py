@@ -67,6 +67,19 @@ def connect_wifi():
     led.on()  # Solid LED when Wi-Fi is connected
     return ip
 
+# Helper to convert percent to PWM value
+def percent_to_pwm(percent):
+    percent = max(0, min(100, int(percent)))
+    return int(percent * 65535 // 100)
+
+# Parse speed from query string
+def get_speed_from_path(path):
+    import ure
+    match = ure.search(r'speed=(\d+)', path)
+    if match:
+        return percent_to_pwm(match.group(1))
+    return percent_to_pwm(60)  # Default 60%
+
 # Simple web server for motor control
 def start_server():
     ip = connect_wifi()
@@ -93,15 +106,16 @@ def start_server():
                 path = req.split(' ')[1] if ' ' in req else '/'
                 cl.send('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
                 # Remap button actions to correct reversed hardware behavior
-                if path == '/forward':
-                    motor_backward()
-                elif path == '/backward':
-                    motor_forward()
-                elif path == '/left':
-                    rotate_right()
-                elif path == '/right':
-                    rotate_left()
-                elif path == '/stop':
+                speed = get_speed_from_path(path)
+                if path.startswith('/forward'):
+                    motor_backward(speed)
+                elif path.startswith('/backward'):
+                    motor_forward(speed)
+                elif path.startswith('/left'):
+                    rotate_right(speed)
+                elif path.startswith('/right'):
+                    rotate_left(speed)
+                elif path.startswith('/stop'):
                     motor_stop()
                 cl.send(f"""
 <html>
@@ -111,10 +125,16 @@ def start_server():
         body {{ font-family: Arial, sans-serif; text-align: center; margin-top: 40px; }}
         .row {{ margin: 10px 0; }}
         button {{ width: 120px; height: 50px; font-size: 18px; margin: 5px; }}
+        .slider {{ width: 300px; }}
     </style>
     <script>
+        let speed = 60;
+        function updateSpeed(val) {{
+            speed = val;
+            document.getElementById('speedval').innerText = speed + '%';
+        }}
         function sendCmd(cmd) {{
-            fetch(cmd);
+            fetch(cmd + '?speed=' + speed);
         }}
         function startCmd(cmd) {{
             sendCmd(cmd);
@@ -126,6 +146,10 @@ def start_server():
 </head>
 <body>
     <h2>Motor Control Panel</h2>
+    <div class='row'>
+        <label for='speed'>Speed: <span id='speedval'>60%</span></label><br>
+        <input type='range' min='0' max='100' value='60' class='slider' id='speed' oninput='updateSpeed(this.value)'>
+    </div>
     <div class='row'>
         <button onmousedown="startCmd('/forward')" onmouseup="stopCmd()" ontouchstart="startCmd('/forward')" ontouchend="stopCmd()">Forward</button>
     </div>
