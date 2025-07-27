@@ -37,13 +37,13 @@ def motor_backward(speed=40000):
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
-def rotate_left(speed=40000):
+def rotate_right(speed=40000):
     in1.low(); in2.high()
     in3.high(); in4.low()
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
-def rotate_right(speed=40000):
+def rotate_left(speed=40000):
     in1.high(); in2.low()
     in3.low(); in4.high()
     ena_pwm.duty_u16(speed)
@@ -131,7 +131,7 @@ def start_server():
     </div>
     <div class='row'>
         <button onmousedown="startCmd('/left')" onmouseup="stopCmd()" ontouchstart="startCmd('/left')" ontouchend="stopCmd()">Rotate_Left</button>
-        <button onclick="stopCmd()" style='background-color:#f44336;color:white;'>■ Stop</button>
+        <button onclick="stopCmd()" style='background-color:#f44336;color:white;'>Stop</button>
         <button onmousedown="startCmd('/right')" onmouseup="stopCmd()" ontouchstart="startCmd('/right')" ontouchend="stopCmd()">Rotate_Right</button>
     </div>
     <div class='row'>
