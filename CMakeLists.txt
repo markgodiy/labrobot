@@ -37,4 +37,10 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Ensure all .xacro files are installed
+install(DIRECTORY description/
+  DESTINATION share/${PROJECT_NAME}/description
+  FILES_MATCHING PATTERN "*.xacro"
+)
+
 ament_package()
