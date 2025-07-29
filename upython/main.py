@@ -43,7 +43,7 @@ def motor_backward(speed=None):
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
-def rotate_right(speed=None):
+def rotate_left(speed=None):
     if speed is None:
         speed = percent_to_pwm(60)  # Default 60% speed
     # Right turn: left wheel forward, right wheel backward
@@ -52,7 +52,7 @@ def rotate_right(speed=None):
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
-def rotate_left(speed=None):
+def rotate_right(speed=None):
     if speed is None:
         speed = percent_to_pwm(60)  # Default 60% speed
     # Left turn: right wheel forward, left wheel backward
