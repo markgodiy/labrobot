@@ -25,28 +25,36 @@ enb_pwm = PWM(Pin(8))  # Enable pin for Motor B
 enb_pwm.freq(1000)
 
 # Motor functions - adjust these if hardware is wired backwards
-def motor_forward(speed=40000):
+def motor_forward(speed=None):
+    if speed is None:
+        speed = percent_to_pwm(60)  # Default 60% speed
     # If robot moves backward when this is called, swap high/low on BOTH motors
     in1.high(); in2.low()  # Motor A forward
     in3.high(); in4.low()  # Motor B forward
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
-def motor_backward(speed=40000):
+def motor_backward(speed=None):
+    if speed is None:
+        speed = percent_to_pwm(60)  # Default 60% speed
     # If robot moves forward when this is called, swap high/low on BOTH motors
     in1.low(); in2.high()  # Motor A backward
     in3.low(); in4.high()  # Motor B backward
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
-def rotate_right(speed=40000):
+def rotate_right(speed=None):
+    if speed is None:
+        speed = percent_to_pwm(60)  # Default 60% speed
     # Right turn: left wheel forward, right wheel backward
     in1.low(); in2.high()   # Motor A (left wheel) backward
     in3.high(); in4.low()   # Motor B (right wheel) forward
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
-def rotate_left(speed=40000):
+def rotate_left(speed=None):
+    if speed is None:
+        speed = percent_to_pwm(60)  # Default 60% speed
     # Left turn: right wheel forward, left wheel backward
     in1.high(); in2.low()   # Motor A (left wheel) forward
     in3.low(); in4.high()   # Motor B (right wheel) backward
@@ -74,6 +82,9 @@ def connect_wifi():
 # Helper to convert percent to PWM value
 def percent_to_pwm(percent):
     percent = max(0, min(100, int(percent)))
+    # Ensure minimum speed for motor movement (below 30% motors might not turn)
+    if percent > 0 and percent < 30:
+        percent = 30
     return int(percent * 65535 // 100)
 
 # Parse speed from query string
@@ -120,6 +131,7 @@ def start_server():
                 cl.send('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
                 # Motor control commands
                 speed = get_speed_from_path(path)
+                print(f"Path: {path}, Speed PWM: {speed}")  # Debug output
                 if path.startswith('/forward'):
                     motor_forward(speed)  # Fixed: forward now calls forward
                 elif path.startswith('/backward'):
