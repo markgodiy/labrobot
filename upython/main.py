@@ -24,44 +24,107 @@ in4 = Pin(7, Pin.OUT)
 enb_pwm = PWM(Pin(8))  # Enable pin for Motor B
 enb_pwm.freq(1000)
 
-# Motor functions - adjust these if hardware is wired backwards
+# Speed ramping variables
+current_speed = 0
+target_speed = 0
+ramp_step = 3000  # PWM units per step (adjust for faster/slower ramping)
+ramp_delay_ms = 50  # Milliseconds between ramp steps
+
+# Ramping configuration
+def set_ramp_speed(fast=False):
+    """Configure ramping speed: fast=True for quicker response, False for smoother"""
+    global ramp_step, ramp_delay_ms
+    if fast:
+        ramp_step = 5000    # Faster ramping
+        ramp_delay_ms = 30  # Shorter delays
+    else:
+        ramp_step = 3000    # Smoother ramping (default)
+        ramp_delay_ms = 50  # Longer delays for smoothness
+
+# Speed ramping function to prevent tipping
+def ramp_to_speed(new_speed, direction_func):
+    global current_speed, target_speed
+    target_speed = new_speed
+    
+    # If we're already at the target, just set direction and return
+    if current_speed == target_speed:
+        direction_func()
+        ena_pwm.duty_u16(current_speed)
+        enb_pwm.duty_u16(current_speed)
+        return
+    
+    # Ramp up or down to target speed
+    while current_speed != target_speed:
+        if current_speed < target_speed:
+            # Ramp up
+            current_speed = min(current_speed + ramp_step, target_speed)
+        else:
+            # Ramp down
+            current_speed = max(current_speed - ramp_step, target_speed)
+        
+        # Set motor direction first (before applying speed)
+        direction_func()
+        
+        # Apply ramped speed
+        ena_pwm.duty_u16(current_speed)
+        enb_pwm.duty_u16(current_speed)
+        
+        # Small delay for smooth ramping
+        sleep_ms(ramp_delay_ms)
+
+# Direction setting functions (no speed control, just direction)
+def set_forward_direction():
+    in1.high(); in2.low()  # Motor A forward
+    in3.high(); in4.low()  # Motor B forward
+
+def set_backward_direction():
+    in1.low(); in2.high()  # Motor A backward
+    in3.low(); in4.high()  # Motor B backward
+
+def set_left_rotation():
+    in1.low(); in2.high()   # Motor A (left wheel) backward
+    in3.high(); in4.low()   # Motor B (right wheel) forward
+
+def set_right_rotation():
+    in1.high(); in2.low()   # Motor A (left wheel) forward
+    in3.low(); in4.high()   # Motor B (right wheel) backward
+# Motor functions with speed ramping - adjust these if hardware is wired backwards
 def motor_forward(speed=None):
     if speed is None:
         speed = percent_to_pwm(60)  # Default 60% speed
-    # If robot moves backward when this is called, swap high/low on BOTH motors
-    in1.high(); in2.low()  # Motor A forward
-    in3.high(); in4.low()  # Motor B forward
-    ena_pwm.duty_u16(speed)
-    enb_pwm.duty_u16(speed)
+    ramp_to_speed(speed, set_forward_direction)
 
 def motor_backward(speed=None):
     if speed is None:
         speed = percent_to_pwm(60)  # Default 60% speed
-    # If robot moves forward when this is called, swap high/low on BOTH motors
-    in1.low(); in2.high()  # Motor A backward
-    in3.low(); in4.high()  # Motor B backward
-    ena_pwm.duty_u16(speed)
-    enb_pwm.duty_u16(speed)
+    ramp_to_speed(speed, set_backward_direction)
 
 def rotate_left(speed=None):
     if speed is None:
         speed = percent_to_pwm(60)  # Default 60% speed
-    # Right turn: left wheel forward, right wheel backward
-    in1.low(); in2.high()   # Motor A (left wheel) backward
-    in3.high(); in4.low()   # Motor B (right wheel) forward
-    ena_pwm.duty_u16(speed)
-    enb_pwm.duty_u16(speed)
+    ramp_to_speed(speed, set_left_rotation)
 
 def rotate_right(speed=None):
     if speed is None:
         speed = percent_to_pwm(60)  # Default 60% speed
-    # Left turn: right wheel forward, left wheel backward
-    in1.high(); in2.low()   # Motor A (left wheel) forward
-    in3.low(); in4.high()   # Motor B (right wheel) backward
-    ena_pwm.duty_u16(speed)
-    enb_pwm.duty_u16(speed)
+    ramp_to_speed(speed, set_right_rotation)
 
 def motor_stop():
+    global current_speed
+    # Ramp down to stop for smooth deceleration
+    ramp_to_speed(0, lambda: None)  # No direction change needed when stopping
+    # Ensure everything is off
+    ena_pwm.duty_u16(0)
+    enb_pwm.duty_u16(0)
+    in1.low(); in2.low()
+    in3.low(); in4.low()
+    current_speed = 0
+
+def emergency_stop():
+    """Immediate stop without ramping - use only in emergencies"""
+    global current_speed, target_speed
+    current_speed = 0
+    target_speed = 0
     ena_pwm.duty_u16(0)
     enb_pwm.duty_u16(0)
     in1.low(); in2.low()
@@ -142,6 +205,12 @@ def start_server():
                     rotate_right(speed)  # Fixed: right now calls right
                 elif path.startswith('/stop'):
                     motor_stop()
+                elif path.startswith('/estop'):
+                    emergency_stop()
+                elif path.startswith('/ramp_fast'):
+                    set_ramp_speed(fast=True)
+                elif path.startswith('/ramp_smooth'):
+                    set_ramp_speed(fast=False)
                 cl.send(f"""
 <html>
 <head>
@@ -167,6 +236,16 @@ def start_server():
         function stopCmd() {{
             sendCmd('/stop');
         }}
+        function emergencyStop() {{
+            fetch('/estop');
+        }}
+        function setRampSpeed(fast) {{
+            if (fast) {{
+                fetch('/ramp_fast');
+            }} else {{
+                fetch('/ramp_smooth');
+            }}
+        }}
     </script>
 </head>
 <body>
@@ -185,6 +264,14 @@ def start_server():
     </div>
     <div class='row'>
         <button onmousedown="startCmd('/backward')" onmouseup="stopCmd()" ontouchstart="startCmd('/backward')" ontouchend="stopCmd()">Reverse</button>
+    </div>
+    <div class='row' style='margin-top:20px;'>
+        <button onclick="emergencyStop()" style='background-color:#ff0000;color:white;font-weight:bold;'>EMERGENCY STOP</button>
+    </div>
+    <div class='row' style='margin-top:15px;'>
+        <label>Ramping Mode:</label><br>
+        <button onclick="setRampSpeed(false)" style='background-color:#4CAF50;color:white;margin:2px;'>Smooth</button>
+        <button onclick="setRampSpeed(true)" style='background-color:#FF9800;color:white;margin:2px;'>Fast</button>
     </div>
     <p style='margin-top:30px;color:gray;'>PicoW IP: {ip}</p>
 </body>
