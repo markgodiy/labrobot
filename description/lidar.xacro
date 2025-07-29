@@ -2,6 +2,10 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
     <!-- filename: lidar.xacro -->
 
+    <!-- Define fallback properties - these will be overridden if already defined -->
+    <xacro:property name="chassis_depth" value="0.368" />
+    <xacro:property name="chassis_height" value="0.62" />
+
     <xacro:property name="lidar_sensor_diameter" value="0.051" />
     <xacro:property name="lidar_sensor_height" value="0.045" />
 
@@ -9,14 +13,14 @@
     <joint name="lidar_joint" type="fixed">
         <parent link="base_link" />
         <child link="lidar_frame" />
-        <origin xyz="${chassis_depth/2 - (lidar_sensor_diameter)} 0 ${chassis_height + 0.060}" rpy="0 0 3.14159" /> <!-- Rotated 180 degrees in yaw -->
+        <origin xyz="${chassis_depth/2 - (lidar_sensor_diameter)} 0 ${chassis_height + 0.075}" rpy="0 0 3.14159" /> <!-- Rotated 180 degrees in yaw -->
     </joint>
 
     <link name="lidar_frame">
         <visual>
             <origin xyz="0 0 0" rpy="0 0 0" />
             <geometry>
-                <cylinder radius="${lidar_sensor_diameter / 2}" length="0.01" />
+                <cylinder radius="${lidar_sensor_diameter / 2}" length="0.05" />
             </geometry>
             <material name="white" />
         </visual>

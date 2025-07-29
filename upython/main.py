@@ -24,28 +24,32 @@ in4 = Pin(7, Pin.OUT)
 enb_pwm = PWM(Pin(8))  # Enable pin for Motor B
 enb_pwm.freq(1000)
 
-# Improved motor functions: no timed movement, only stop when /stop is called
+# Motor functions - adjust these if hardware is wired backwards
 def motor_forward(speed=40000):
-    in1.high(); in2.low()
-    in3.high(); in4.low()
+    # If robot moves backward when this is called, swap high/low on BOTH motors
+    in1.high(); in2.low()  # Motor A forward
+    in3.high(); in4.low()  # Motor B forward
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
 def motor_backward(speed=40000):
-    in1.low(); in2.high()
-    in3.low(); in4.high()
+    # If robot moves forward when this is called, swap high/low on BOTH motors
+    in1.low(); in2.high()  # Motor A backward
+    in3.low(); in4.high()  # Motor B backward
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
 def rotate_right(speed=40000):
-    in1.low(); in2.high()
-    in3.high(); in4.low()
+    # Right turn: left wheel forward, right wheel backward
+    in1.low(); in2.high()   # Motor A (left wheel) backward
+    in3.high(); in4.low()   # Motor B (right wheel) forward
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
 def rotate_left(speed=40000):
-    in1.high(); in2.low()
-    in3.low(); in4.high()
+    # Left turn: right wheel forward, left wheel backward
+    in1.high(); in2.low()   # Motor A (left wheel) forward
+    in3.low(); in4.high()   # Motor B (right wheel) backward
     ena_pwm.duty_u16(speed)
     enb_pwm.duty_u16(speed)
 
@@ -74,10 +78,19 @@ def percent_to_pwm(percent):
 
 # Parse speed from query string
 def get_speed_from_path(path):
-    import ure
-    match = ure.search(r'speed=(\d+)', path)
-    if match:
-        return percent_to_pwm(match.group(1))
+    try:
+        import re
+        match = re.search(r'speed=(\d+)', path)
+        if match:
+            return percent_to_pwm(match.group(1))
+    except ImportError:
+        # Fallback for older MicroPython versions
+        if 'speed=' in path:
+            try:
+                speed_part = path.split('speed=')[1].split('&')[0]
+                return percent_to_pwm(speed_part)
+            except (IndexError, ValueError):
+                pass
     return percent_to_pwm(60)  # Default 60%
 
 # Simple web server for motor control
@@ -100,21 +113,21 @@ def start_server():
 
     try:
         while True:
-            cl, addr = s.accept()
+            cl, client_addr = s.accept()
             try:
                 req = cl.recv(1024).decode()
                 path = req.split(' ')[1] if ' ' in req else '/'
                 cl.send('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
-                # Remap button actions to correct reversed hardware behavior
+                # Motor control commands
                 speed = get_speed_from_path(path)
                 if path.startswith('/forward'):
-                    motor_backward(speed)
+                    motor_forward(speed)  # Fixed: forward now calls forward
                 elif path.startswith('/backward'):
-                    motor_forward(speed)
+                    motor_backward(speed)  # Fixed: backward now calls backward
                 elif path.startswith('/left'):
-                    rotate_right(speed)
+                    rotate_left(speed)  # Fixed: left now calls left
                 elif path.startswith('/right'):
-                    rotate_left(speed)
+                    rotate_right(speed)  # Fixed: right now calls right
                 elif path.startswith('/stop'):
                     motor_stop()
                 cl.send(f"""
