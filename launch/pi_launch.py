@@ -3,7 +3,8 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.substitutions import LaunchConfiguration
 from launch.actions import DeclareLaunchArgument
-from launch_ros.actions import Node
+from launch_ros.actions import Node, ComposableNodeContainer
+from launch_ros.descriptions import ComposableNode
 import xacro
 
 
@@ -102,22 +103,51 @@ def generate_launch_description():
         name='oak_camera',
         parameters=[{
             'camera_model': 'OAK-D-LITE',
-            'tf_prefix': 'oak',
+            'tf_prefix': 'oak_camera',  # Use oak_camera prefix to match actual topics
             'mode': 'depth',  # Full depth mode now that power is stable
             'depth_enabled': True,  # Enable depth for navigation/obstacle avoidance
             'stereo_enabled': True,
             'rgb_enabled': True,
-            'pointcloud_enabled': True,  # Enable point cloud for 3D perception
-            'imu_enabled': False,  # Enable if you want IMU data
+            'pointcloud_enabled': False,  # Disable built-in pointcloud to use RGB overlay version
             'use_sim_time': use_sim_time,
-            # Full quality settings now that power is stable
+            # Quality settings
             'rgb_resolution': '720p',
             'depth_resolution': '720p',
             'fps': 30,
             'publish_tf_from_calibration': True,
-            'tf_parent': 'oak_camera_frame',  # Should match your URDF camera frame
+            # Let depthai use its default topic naming
         }],
         output='screen'
+    )
+
+    # RGB Point Cloud Processing Container for RGB overlay on point cloud
+    # This creates colored point clouds by combining RGB and depth images
+    point_cloud_container = ComposableNodeContainer(
+        name='point_cloud_container',
+        namespace='',
+        package='rclcpp_components',
+        executable='component_container',
+        composable_node_descriptions=[
+            ComposableNode(
+                package='depth_image_proc',
+                plugin='depth_image_proc::PointCloudXyzrgbNode',
+                name='point_cloud_xyzrgb_node',
+                remappings=[
+                    # Map OAK-D camera topics to standard depth_image_proc inputs
+                    ('rgb/image_rect_color', '/oak_camera/rgb/image_raw'),
+                    ('rgb/camera_info', '/oak_camera/rgb/camera_info'),
+                    ('depth_registered/image_rect', '/oak_camera/stereo/image_raw'),
+                    ('depth_registered/camera_info', '/oak_camera/stereo/camera_info'),
+                    # Output colored point cloud
+                    ('points', '/oak_camera/points_xyzrgb')
+                ],
+                parameters=[{
+                    'use_sim_time': use_sim_time,
+                    'queue_size': 5,  # Synchronization queue size
+                }]
+            ),
+        ],
+        output='screen',
     )
 
     # Launch!
@@ -141,5 +171,6 @@ def generate_launch_description():
         static_tf_pub_odom_base,
         rplidar_node,
         oak_camera,  # ENABLED - power issue resolved!
+        point_cloud_container,  # RGB overlay point cloud processing
         # Note: No ROS-Gazebo bridge needed for Raspberry Pi hardware
     ])
