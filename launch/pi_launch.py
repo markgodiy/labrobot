@@ -94,6 +94,32 @@ def generate_launch_description():
         output='screen'
     )
 
+    # OAK-D Lite Camera configuration
+    oak_camera = Node(
+        package='depthai_ros_driver',
+        executable='depthai_ros_driver_node',
+        name='oak_camera',
+        parameters=[{
+            'camera_model': 'OAK-D-LITE',
+            'tf_prefix': 'oak',
+            'mode': 'depth',
+            'depth_enabled': True,
+            'stereo_enabled': True,
+            'rgb_enabled': True,
+            'pointcloud_enabled': True,
+            'imu_enabled': False,  # Set to True if you want IMU data
+            'use_sim_time': use_sim_time,
+            # Camera quality settings
+            'rgb_resolution': '720p',
+            'depth_resolution': '720p',
+            'fps': 30,
+            # Enable/disable specific streams
+            'publish_tf_from_calibration': True,
+            'tf_parent': 'oak_camera_frame',  # Should match your URDF camera frame
+        }],
+        output='screen'
+    )
+
     # Launch!
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -113,6 +139,7 @@ def generate_launch_description():
         node_joint_state_publisher,
         static_tf_pub_map_odom,
         static_tf_pub_odom_base,
-        rplidar_node
+        rplidar_node,
+        oak_camera
         # Note: No ROS-Gazebo bridge needed for Raspberry Pi hardware
     ])
