@@ -25,7 +25,7 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_description, 'use_sim_time': use_sim_time}]
     )
 
-    # Create a joint_state_publisher node (non-GUI) - for dev machine without simulation
+    # Create a joint_state_publisher node (non-GUI) - for real robot without simulation
     node_joint_state_publisher = Node(
         package='joint_state_publisher',
         executable='joint_state_publisher',
@@ -43,7 +43,21 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-    # Note: No ROS-Gazebo bridge needed for dev machine without simulation
+    # Bridge for common topics (no Gazebo, but keeping for potential future use)
+    # Note: Remove this bridge if not using any Gazebo components on Pi
+    # bridge = Node(
+    #     package='ros_gz_bridge',
+    #     executable='parameter_bridge',
+    #     arguments=[
+    #         '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+    #         '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
+    #         '/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+    #         '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
+    #         '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
+    #         '/camera/image_raw@sensor_msgs/msg/Image@gz.msgs.Image'
+    #     ],
+    #     output='screen'
+    # )
 
     # RPLIDAR node configuration
     channel_type = LaunchConfiguration('channel_type', default='serial')
@@ -89,5 +103,5 @@ def generate_launch_description():
         node_joint_state_publisher,
         static_tf_pub,
         rplidar_node
-        # Note: No ROS-Gazebo bridge needed for dev machine without simulation
+        # Note: No ROS-Gazebo bridge needed for Raspberry Pi hardware
     ])
