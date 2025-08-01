@@ -150,6 +150,35 @@ def generate_launch_description():
         output='screen',
     )
 
+    # Image republisher for easier RViz access (optional - for convenience)
+    # Republish RGB image with a more standard topic name
+    rgb_republisher = Node(
+        package='image_transport',
+        executable='republish',
+        name='rgb_republisher',
+        arguments=['raw', 'raw'],
+        remappings=[
+            ('in', '/oak_camera/rgb/image_raw'),
+            ('out', '/camera/rgb/image_color'),
+        ],
+        parameters=[{'use_sim_time': use_sim_time}],
+        output='screen'
+    )
+
+    # Republish depth image with a more standard topic name
+    depth_republisher = Node(
+        package='image_transport',
+        executable='republish',
+        name='depth_republisher',
+        arguments=['raw', 'raw'],
+        remappings=[
+            ('in', '/oak_camera/stereo/image_raw'),
+            ('out', '/camera/depth/image_raw'),
+        ],
+        parameters=[{'use_sim_time': use_sim_time}],
+        output='screen'
+    )
+
     # Launch!
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -172,5 +201,7 @@ def generate_launch_description():
         rplidar_node,
         oak_camera,  # ENABLED - power issue resolved!
         point_cloud_container,  # RGB overlay point cloud processing
+        rgb_republisher,
+        depth_republisher,
         # Note: No ROS-Gazebo bridge needed for Raspberry Pi hardware
     ])
