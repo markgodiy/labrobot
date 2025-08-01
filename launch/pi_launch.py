@@ -43,13 +43,13 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-    # Static transform publisher for odom->base_footprint (basic odometry for real robot)
+    # Static transform publisher for odom->base_link (basic odometry for real robot)
     # Note: In a real robot setup, this should be replaced with actual odometry from wheel encoders
     static_tf_pub_odom_base = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
-        name='odom_to_base_footprint_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_footprint'],
+        name='odom_to_base_link_publisher',
+        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_link'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
@@ -78,6 +78,7 @@ def generate_launch_description():
     angle_compensate = LaunchConfiguration('angle_compensate', default='true')
     scan_mode = LaunchConfiguration('scan_mode', default='Standard')
 
+    # Note: LIDAR will fail to start if not connected - this is expected for testing without hardware
     rplidar_node = Node(
         package='sllidar_ros2',
         executable='sllidar_node',
@@ -94,30 +95,30 @@ def generate_launch_description():
         output='screen'
     )
 
-    # OAK-D Lite Camera configuration (DISABLED due to power issues)
-    # TODO: Enable after getting powered USB hub to fix power brownout
-    # oak_camera = Node(
-    #     package='depthai_ros_driver',
-    #     executable='camera_node',  # Correct executable name
-    #     name='oak_camera',
-    #     parameters=[{
-    #         'camera_model': 'OAK-D-LITE',
-    #         'tf_prefix': 'oak',
-    #         'mode': 'rgb',  # Reduced power mode
-    #         'depth_enabled': False,  # Disable to reduce power consumption
-    #         'stereo_enabled': False,
-    #         'rgb_enabled': True,
-    #         'pointcloud_enabled': False,
-    #         'imu_enabled': False,
-    #         'use_sim_time': use_sim_time,
-    #         # Reduced quality settings for lower power
-    #         'rgb_resolution': '480p',
-    #         'fps': 15,
-    #         'publish_tf_from_calibration': True,
-    #         'tf_parent': 'oak_camera_frame',
-    #     }],
-    #     output='screen'
-    # )
+    # OAK-D Lite Camera configuration (ENABLED - power issue resolved!)
+    oak_camera = Node(
+        package='depthai_ros_driver',
+        executable='camera_node',  # Correct executable name
+        name='oak_camera',
+        parameters=[{
+            'camera_model': 'OAK-D-LITE',
+            'tf_prefix': 'oak',
+            'mode': 'depth',  # Full depth mode now that power is stable
+            'depth_enabled': True,  # Enable depth for navigation/obstacle avoidance
+            'stereo_enabled': True,
+            'rgb_enabled': True,
+            'pointcloud_enabled': True,  # Enable point cloud for 3D perception
+            'imu_enabled': False,  # Enable if you want IMU data
+            'use_sim_time': use_sim_time,
+            # Full quality settings now that power is stable
+            'rgb_resolution': '720p',
+            'depth_resolution': '720p',
+            'fps': 30,
+            'publish_tf_from_calibration': True,
+            'tf_parent': 'oak_camera_frame',  # Should match your URDF camera frame
+        }],
+        output='screen'
+    )
 
     # Launch!
     return LaunchDescription([
@@ -139,6 +140,6 @@ def generate_launch_description():
         static_tf_pub_map_odom,
         static_tf_pub_odom_base,
         rplidar_node,
-        # oak_camera  # DISABLED - enable after fixing power and installation issues
+        oak_camera,  # ENABLED - power issue resolved!
         # Note: No ROS-Gazebo bridge needed for Raspberry Pi hardware
     ])
