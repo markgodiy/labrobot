@@ -35,11 +35,21 @@ def generate_launch_description():
     )
 
     # Static transform publisher for map->odom (if needed for navigation)
-    static_tf_pub = Node(
+    static_tf_pub_map_odom = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         name='map_to_odom_publisher',
         arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
+    # Static transform publisher for odom->base_footprint (basic odometry for real robot)
+    # Note: In a real robot setup, this should be replaced with actual odometry from wheel encoders
+    static_tf_pub_odom_base = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='odom_to_base_footprint_publisher',
+        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_footprint'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
@@ -101,7 +111,8 @@ def generate_launch_description():
 
         node_robot_state_publisher,
         node_joint_state_publisher,
-        static_tf_pub,
+        static_tf_pub_map_odom,
+        static_tf_pub_odom_base,
         rplidar_node
         # Note: No ROS-Gazebo bridge needed for Raspberry Pi hardware
     ])
