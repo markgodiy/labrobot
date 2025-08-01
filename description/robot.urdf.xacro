@@ -5,11 +5,13 @@
     <xacro:include filename="inertial_macros.xacro" />
     <xacro:include filename="gazebo_control.xacro" />
     <xacro:include filename="lidar.xacro" />
-    <xacro:include filename="camera.xacro" />
+    <!-- <xacro:include filename="camera.xacro" /> -->
+    <xacro:include filename="depth_camera.xacro" />
 
     <!-- Gazebo system plugins for sensors and joint state publisher -->
     <gazebo>
         <plugin name="gz::sim::systems::Sensors" filename="gz-sim-sensors-system" />
         <plugin name="gz::sim::systems::JointStatePublisher" filename="gz-sim-joint-state-publisher-system" />
+        <plugin name="gz::sim::systems::DiffDrive" filename="gz-sim-diff-drive-system" />
     </gazebo>
 </robot>

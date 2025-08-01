@@ -25,15 +25,6 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_description, 'use_sim_time': use_sim_time}]
     )
 
-    # Create a joint_state_publisher node (non-GUI)
-    node_joint_state_publisher = Node(
-        package='joint_state_publisher',
-        executable='joint_state_publisher',
-        name='joint_state_publisher',
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
-
     # Launch Gazebo (gz sim) with default world (ground plane and sun)
     gazebo = ExecuteProcess(
         cmd=['gz', 'sim', '-v', '4', '/opt/ros/jazzy/opt/gz_sim_vendor/share/gz/gz-sim8/worlds/empty.sdf'],
@@ -48,6 +39,15 @@ def generate_launch_description():
         output='screen'
     )
 
+    # Static transform publisher for map->odom (if needed for navigation)
+    static_tf_pub = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='map_to_odom_publisher',
+        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # Bridge for common topics
     bridge = Node(
         package='ros_gz_bridge',
@@ -55,53 +55,38 @@ def generate_launch_description():
         arguments=[
             '/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
             '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
-            '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
-            '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V',
-            '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',  # <-- Added bridge for LIDAR
-            '/camera/image_raw@sensor_msgs/msg/Image@gz.msgs.Image'  # <-- Added bridge for camera
+            '/odom@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+            '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',  # Changed to bidirectional
+            '/scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan',
+            '/camera/image_raw@sensor_msgs/msg/Image@gz.msgs.Image',
+            '/depth_camera@sensor_msgs/msg/Image@gz.msgs.Image',
+            '/depth_camera/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked'
         ],
         output='screen'
     )
 
-    # RPLIDAR node configuration
-    channel_type = LaunchConfiguration('channel_type', default='serial')
-    serial_port = LaunchConfiguration('serial_port', default='/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_f4ff8904fb63ef118309e1a9c169b110-if00-port0')
-    serial_baudrate = LaunchConfiguration('serial_baudrate', default='460800')
-    frame_id = LaunchConfiguration('frame_id', default='lidar_frame')  # Use your robot's frame
-    inverted = LaunchConfiguration('inverted', default='false')
-    angle_compensate = LaunchConfiguration('angle_compensate', default='true')
-    scan_mode = LaunchConfiguration('scan_mode', default='Standard')
-
-    rplidar_node = Node(
-        package='sllidar_ros2',
-        executable='sllidar_node',
-        name='sllidar_node',
-        parameters=[
-            {'channel_type': channel_type},
-            {'serial_port': serial_port},
-            {'serial_baudrate': serial_baudrate},
-            {'frame_id': frame_id},
-            {'inverted': inverted},
-            {'angle_compensate': angle_compensate},
-            {'scan_mode': scan_mode}
+    # Separate bridge for joint states with remapping
+    joint_state_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        arguments=[
+            '/world/empty/model/labrobot/joint_state@sensor_msgs/msg/JointState[gz.msgs.Model'
+        ],
+        remappings=[
+            ('/world/empty/model/labrobot/joint_state', '/joint_states')
         ],
         output='screen'
     )
 
     # Launch!
     return LaunchDescription([
-        DeclareLaunchArgument('use_sim_time', default_value='false', description='Use sim time if true'),
-        DeclareLaunchArgument('channel_type', default_value=channel_type, description='Specifying channel type of lidar'),
-        DeclareLaunchArgument('serial_port', default_value=serial_port, description='Specifying usb port to connected lidar'),
-        DeclareLaunchArgument('serial_baudrate', default_value=serial_baudrate, description='Specifying usb port baudrate to connected lidar'),
-        DeclareLaunchArgument('frame_id', default_value=frame_id, description='Specifying frame_id of lidar'),
-        DeclareLaunchArgument('inverted', default_value=inverted, description='Specifying whether or not to invert scan data'),
-        DeclareLaunchArgument('angle_compensate', default_value=angle_compensate, description='Specifying whether or not to enable angle_compensate of scan data'),
-        DeclareLaunchArgument('scan_mode', default_value=scan_mode, description='Specifying scan mode of lidar'),
+        DeclareLaunchArgument('use_sim_time', default_value='true', description='Use sim time if true'),  # Changed to true for simulation
         node_robot_state_publisher,
-        node_joint_state_publisher,
+        # Note: joint_state_publisher removed for simulation - Gazebo publishes joint states via DiffDrive plugin
+        static_tf_pub,
         gazebo,
         bridge,
+        joint_state_bridge,  # Added separate joint state bridge
         spawn_entity,
-        rplidar_node  # Add the RPLIDAR node
+        # Note: rplidar_node removed for simulation - using simulated LIDAR instead
     ])
