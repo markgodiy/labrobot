@@ -94,31 +94,30 @@ def generate_launch_description():
         output='screen'
     )
 
-    # OAK-D Lite Camera configuration
-    oak_camera = Node(
-        package='depthai_ros_driver',
-        executable='depthai_ros_driver_node',
-        name='oak_camera',
-        parameters=[{
-            'camera_model': 'OAK-D-LITE',
-            'tf_prefix': 'oak',
-            'mode': 'depth',
-            'depth_enabled': True,
-            'stereo_enabled': True,
-            'rgb_enabled': True,
-            'pointcloud_enabled': True,
-            'imu_enabled': False,  # Set to True if you want IMU data
-            'use_sim_time': use_sim_time,
-            # Camera quality settings
-            'rgb_resolution': '720p',
-            'depth_resolution': '720p',
-            'fps': 30,
-            # Enable/disable specific streams
-            'publish_tf_from_calibration': True,
-            'tf_parent': 'oak_camera_frame',  # Should match your URDF camera frame
-        }],
-        output='screen'
-    )
+    # OAK-D Lite Camera configuration (DISABLED due to power issues)
+    # TODO: Enable after getting powered USB hub to fix power brownout
+    # oak_camera = Node(
+    #     package='depthai_ros_driver',
+    #     executable='camera_node',  # Correct executable name
+    #     name='oak_camera',
+    #     parameters=[{
+    #         'camera_model': 'OAK-D-LITE',
+    #         'tf_prefix': 'oak',
+    #         'mode': 'rgb',  # Reduced power mode
+    #         'depth_enabled': False,  # Disable to reduce power consumption
+    #         'stereo_enabled': False,
+    #         'rgb_enabled': True,
+    #         'pointcloud_enabled': False,
+    #         'imu_enabled': False,
+    #         'use_sim_time': use_sim_time,
+    #         # Reduced quality settings for lower power
+    #         'rgb_resolution': '480p',
+    #         'fps': 15,
+    #         'publish_tf_from_calibration': True,
+    #         'tf_parent': 'oak_camera_frame',
+    #     }],
+    #     output='screen'
+    # )
 
     # Launch!
     return LaunchDescription([
@@ -140,6 +139,6 @@ def generate_launch_description():
         static_tf_pub_map_odom,
         static_tf_pub_odom_base,
         rplidar_node,
-        oak_camera
+        # oak_camera  # DISABLED - enable after fixing power and installation issues
         # Note: No ROS-Gazebo bridge needed for Raspberry Pi hardware
     ])
