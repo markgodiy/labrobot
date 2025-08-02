@@ -108,12 +108,12 @@ def generate_launch_description():
             'depth_enabled': True,  # Enable depth for navigation/obstacle avoidance
             'stereo_enabled': True,
             'rgb_enabled': True,
-            'pointcloud_enabled': False,  # Disable built-in pointcloud to use RGB overlay version
+            'pointcloud_enabled': True,  # Re-enable built-in pointcloud for debugging
             'use_sim_time': use_sim_time,
             # Quality settings
             'rgb_resolution': '720p',
             'depth_resolution': '720p',
-            'fps': 30,
+            'fps': 15,  # Reduced FPS to reduce data load and improve sync
             'publish_tf_from_calibration': True,
             # Let depthai use its default topic naming
         }],
@@ -122,62 +122,65 @@ def generate_launch_description():
 
     # RGB Point Cloud Processing Container for RGB overlay on point cloud
     # This creates colored point clouds by combining RGB and depth images
-    point_cloud_container = ComposableNodeContainer(
-        name='point_cloud_container',
-        namespace='',
-        package='rclcpp_components',
-        executable='component_container',
-        composable_node_descriptions=[
-            ComposableNode(
-                package='depth_image_proc',
-                plugin='depth_image_proc::PointCloudXyzrgbNode',
-                name='point_cloud_xyzrgb_node',
-                remappings=[
-                    # Map OAK-D camera topics to standard depth_image_proc inputs
-                    ('rgb/image_rect_color', '/oak_camera/rgb/image_raw'),
-                    ('rgb/camera_info', '/oak_camera/rgb/camera_info'),
-                    ('depth_registered/image_rect', '/oak_camera/stereo/image_raw'),
-                    ('depth_registered/camera_info', '/oak_camera/stereo/camera_info'),
-                    # Output colored point cloud
-                    ('points', '/oak_camera/points_xyzrgb')
-                ],
-                parameters=[{
-                    'use_sim_time': use_sim_time,
-                    'queue_size': 5,  # Synchronization queue size
-                }]
-            ),
-        ],
-        output='screen',
-    )
+    # TEMPORARILY DISABLED for debugging - re-enable once basic functionality works
+    # point_cloud_container = ComposableNodeContainer(
+    #     name='point_cloud_container',
+    #     namespace='',
+    #     package='rclcpp_components',
+    #     executable='component_container',
+    #     composable_node_descriptions=[
+    #         ComposableNode(
+    #             package='depth_image_proc',
+    #             plugin='depth_image_proc::PointCloudXyzrgbNode',
+    #             name='point_cloud_xyzrgb_node',
+    #             remappings=[
+    #                 # Map OAK-D camera topics to standard depth_image_proc inputs
+    #                 ('rgb/image_rect_color', '/oak_camera/rgb/image_raw'),
+    #                 ('rgb/camera_info', '/oak_camera/rgb/camera_info'),
+    #                 ('depth_registered/image_rect', '/oak_camera/stereo/image_raw'),
+    #                 ('depth_registered/camera_info', '/oak_camera/stereo/camera_info'),
+    #                 # Output colored point cloud
+    #                 ('points', '/oak_camera/points_xyzrgb')
+    #             ],
+    #             parameters=[{
+    #                 'use_sim_time': use_sim_time,
+    #                 'queue_size': 5,  # Synchronization queue size
+    #                 'approximate_sync': True,  # Use approximate time sync for better performance
+    #             }]
+    #         ),
+    #     ],
+    #     output='screen',
+    # )
 
-    # Image republisher for easier RViz access (optional - for convenience)
-    # Republish RGB image with a more standard topic name
-    rgb_republisher = Node(
-        package='image_transport',
-        executable='republish',
-        name='rgb_republisher',
-        arguments=['raw', 'raw'],
-        remappings=[
-            ('in', '/oak_camera/rgb/image_raw'),
-            ('out', '/camera/rgb/image_color'),
-        ],
-        parameters=[{'use_sim_time': use_sim_time}],
-        output='screen'
-    )
+    # TEMPORARILY DISABLED - Image republishers for debugging
+    # # Image republisher for easier RViz access (optional - for convenience)
+    # # Republish RGB image with a more standard topic name
+    # rgb_republisher = Node(
+    #     package='image_transport',
+    #     executable='republish',
+    #     name='rgb_republisher',
+    #     arguments=['raw', 'raw'],
+    #     remappings=[
+    #         ('in', '/oak_camera/rgb/image_raw'),
+    #         ('out', '/camera/rgb/image_color'),
+    #     ],
+    #     parameters=[{'use_sim_time': use_sim_time}],
+    #     output='screen'
+    # )
 
-    # Republish depth image with a more standard topic name
-    depth_republisher = Node(
-        package='image_transport',
-        executable='republish',
-        name='depth_republisher',
-        arguments=['raw', 'raw'],
-        remappings=[
-            ('in', '/oak_camera/stereo/image_raw'),
-            ('out', '/camera/depth/image_raw'),
-        ],
-        parameters=[{'use_sim_time': use_sim_time}],
-        output='screen'
-    )
+    # # Republish depth image with a more standard topic name
+    # depth_republisher = Node(
+    #     package='image_transport',
+    #     executable='republish',
+    #     name='depth_republisher',
+    #     arguments=['raw', 'raw'],
+    #     remappings=[
+    #         ('in', '/oak_camera/stereo/image_raw'),
+    #         ('out', '/camera/depth/image_raw'),
+    #     ],
+    #     parameters=[{'use_sim_time': use_sim_time}],
+    #     output='screen'
+    # )
 
     # Launch!
     return LaunchDescription([
@@ -200,8 +203,9 @@ def generate_launch_description():
         static_tf_pub_odom_base,
         rplidar_node,
         oak_camera,  # ENABLED - power issue resolved!
-        point_cloud_container,  # RGB overlay point cloud processing
-        rgb_republisher,
-        depth_republisher,
+        # TEMPORARILY DISABLED for debugging:
+        # point_cloud_container,  # RGB overlay point cloud processing
+        # rgb_republisher,
+        # depth_republisher,
         # Note: No ROS-Gazebo bridge needed for Raspberry Pi hardware
     ])
