@@ -54,6 +54,16 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
+    # Static transform publisher for base_link->base_footprint (robot ground projection)
+    # This connects base_footprint to the robot's transform chain
+    static_tf_pub_base_footprint = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='base_link_to_base_footprint_publisher',
+        arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'base_footprint'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # Bridge for common topics (no Gazebo, but keeping for potential future use)
     # Note: Remove this bridge if not using any Gazebo components on Pi
     # bridge = Node(
@@ -201,6 +211,7 @@ def generate_launch_description():
         node_joint_state_publisher,
         static_tf_pub_map_odom,
         static_tf_pub_odom_base,
+        static_tf_pub_base_footprint,
         rplidar_node,
         oak_camera,  # ENABLED - power issue resolved!
         # TEMPORARILY DISABLED for debugging:
