@@ -44,13 +44,14 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-    # Static transform publisher for odom->base_link (basic odometry for real robot)
+    # Static transform publisher for odom->base_footprint (basic odometry for real robot)
     # Note: In a real robot setup, this should be replaced with actual odometry from wheel encoders
+    # This connects to base_footprint, which then connects to base_link via the URDF
     static_tf_pub_odom_base = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
-        name='odom_to_base_link_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_link'],
+        name='odom_to_base_footprint_publisher',
+        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_footprint'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
