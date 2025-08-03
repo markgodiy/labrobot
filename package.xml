@@ -3,11 +3,24 @@
 <package format="3">
   <name>labrobot</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="my_email@email.com">MY NAME</maintainer>
-  <license>TODO: License declaration</license>
+  <description>ROS 2 autonomous robot package with LIDAR, depth camera, and MicroPython motor controller integration</description>
+  <maintainer email="botmanager@robotpi4b8g01.local">Bot Manager</maintainer>
+  <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  
+  <!-- ROS 2 dependencies -->
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  
+  <!-- Additional dependencies for autonomous navigation -->
+  <exec_depend>requests</exec_depend>
+  <exec_depend>numpy</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

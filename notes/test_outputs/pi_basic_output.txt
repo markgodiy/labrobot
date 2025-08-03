@@ -1,0 +1,518 @@
+botmanager@robotpi4b8g01:~/lab_ws$ ros2 launch labrobot pi.basic.sensors.launch.py
+[INFO] [launch]: All log files can be found below /home/botmanager/.ros/log/2025-08-03-11-27-20-883854-robotpi4b8g01-4293
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [robot_state_publisher-1]: process started with pid [4310]
+[INFO] [joint_state_publisher-2]: process started with pid [4311]
+[INFO] [static_transform_publisher-3]: process started with pid [4312]
+[INFO] [static_transform_publisher-4]: process started with pid [4313]
+[INFO] [static_transform_publisher-5]: process started with pid [4314]
+[INFO] [sllidar_node-6]: process started with pid [4315]
+[INFO] [camera_node-7]: process started with pid [4316]
+[INFO] [component_container-8]: process started with pid [4317]
+[INFO] [republish-9]: process started with pid [4318]
+[INFO] [republish-10]: process started with pid [4319]
+[component_container-8] [INFO] [1754234844.462799637] [point_cloud_container]: Load Library: /opt/ros/jazzy/lib/libdepth_image_proc.so
+[republish-10] [INFO] [1754234844.931149623] [depth_republisher]: The 'in_transport' parameter is set to: raw
+[republish-10] [INFO] [1754234844.974795845] [depth_republisher]: The 'out_transport' parameter is set to:
+[static_transform_publisher-3] [INFO] [1754234845.126235702] [map_to_odom_publisher]: Spinning until stopped - publishing transform
+[static_transform_publisher-3] translation: ('0.000000', '0.000000', '0.000000')
+[static_transform_publisher-3] rotation: ('0.000000', '0.000000', '0.000000', '1.000000')
+[static_transform_publisher-3] from 'map' to 'odom'
+[republish-9] [INFO] [1754234845.231011291] [rgb_republisher]: The 'in_transport' parameter is set to: raw
+[republish-9] [INFO] [1754234845.240924165] [rgb_republisher]: The 'out_transport' parameter is set to:
+[sllidar_node-6] [INFO] [1754234845.234257206] [sllidar_node]: SLLidar running on ROS2 package SLLidar.ROS2 SDK Version:1.0.1, SLLIDAR SDK Version:2.1.0
+[static_transform_publisher-4] [INFO] [1754234845.393161075] [odom_to_base_footprint_publisher]: Spinning until stopped - publishing transform
+[static_transform_publisher-4] translation: ('0.000000', '0.000000', '0.000000')
+[static_transform_publisher-4] rotation: ('0.000000', '0.000000', '0.000000', '1.000000')
+[static_transform_publisher-4] from 'odom' to 'base_footprint'
+[static_transform_publisher-5] [INFO] [1754234845.549621433] [oak_to_depth_camera_publisher]: Spinning until stopped - publishing transform
+[static_transform_publisher-5] translation: ('0.000000', '0.000000', '0.000000')
+[static_transform_publisher-5] rotation: ('0.000000', '0.000000', '0.000000', '1.000000')
+[static_transform_publisher-5] from 'depth_camera_link' to 'oak'
+[robot_state_publisher-1] [INFO] [1754234845.717699734] [robot_state_publisher]: Robot initialized
+[sllidar_node-6] [INFO] [1754234845.826737142] [sllidar_node]: SLLidar S/N: 9BF6E195C1E79ED6B5E29EF11F214A73
+[sllidar_node-6] [INFO] [1754234845.827057641] [sllidar_node]: Firmware Ver: 1.02
+[sllidar_node-6] [INFO] [1754234845.830307630] [sllidar_node]: Hardware Rev: 18
+[sllidar_node-6] [INFO] [1754234845.837285736] [sllidar_node]: SLLidar health status : 0
+[sllidar_node-6] [INFO] [1754234845.837691216] [sllidar_node]: SLLidar health status : OK.
+[component_container-8] [INFO] [1754234846.200450356] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::ConvertMetricNode>
+[component_container-8] [INFO] [1754234846.203419031] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::CropForemostNode>
+[component_container-8] [INFO] [1754234846.203905029] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::DisparityNode>
+[component_container-8] [INFO] [1754234846.204294991] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzNode>
+[component_container-8] [INFO] [1754234846.204701175] [point_cloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzNode>
+[sllidar_node-6] [INFO] [1754234846.238640189] [sllidar_node]: current scan mode: Standard, sample rate: 5 Khz, max_distance: 16.0 m, scan frequency:10.0 Hz,
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/point_cloud_xyz_node' in container '/point_cloud_container'
+[component_container-8] [INFO] [1754234846.748262795] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::ConvertMetricNode>
+[component_container-8] [INFO] [1754234846.748758700] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::CropForemostNode>
+[component_container-8] [INFO] [1754234846.749059533] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::DisparityNode>
+[component_container-8] [INFO] [1754234846.749665457] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzNode>
+[component_container-8] [INFO] [1754234846.750069826] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzRadialNode>
+[component_container-8] [INFO] [1754234846.750466121] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyziNode>
+[component_container-8] [INFO] [1754234846.750919397] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyziRadialNode>
+[component_container-8] [INFO] [1754234846.751281414] [point_cloud_container]: Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzrgbNode>
+[component_container-8] [INFO] [1754234846.751718024] [point_cloud_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzrgbNode>
+[camera_node-7] [INFO] [1754234846.865713859] [oak]: Starting camera.
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/point_cloud_xyzrgb_node' in container '/point_cloud_container'
+[camera_node-7] [INFO] [1754234846.904791468] [oak]: No ip/mxid specified, connecting to the next available device.
+[joint_state_publisher-2] [INFO] [1754234848.570817578] [joint_state_publisher]: Waiting for robot_description to be published on the robot_description topic...
+[camera_node-7] [INFO] [1754234850.391217423] [oak]: Camera with MXID: 19443010C1CFE42C00 and Name: 1.1.1 connected!
+[camera_node-7] [INFO] [1754234850.393214880] [oak]: USB SPEED: HIGH
+[camera_node-7] [INFO] [1754234850.443717208] [oak]: Device type: OAK-D-LITE
+[camera_node-7] [INFO] [1754234850.453975970] [oak]: Pipeline type: RGBD
+[camera_node-7] [WARN] [1754234850.661298471] [oak]: Resolution 720P not supported by sensor IMX214. Using default resolution 1080P
+[camera_node-7] [INFO] [1754234851.282827567] [oak]: NN Family: mobilenet
+[camera_node-7] [INFO] [1754234851.502045786] [oak]: NN input size: 300 x 300. Resizing input image in case of different dimensions.
+[camera_node-7] [INFO] [1754234852.202488541] [oak]: Finished setting up pipeline.
+[camera_node-7] [19443010C1CFE42C00] [1.1.1] [4.150] [SpatialDetectionNetwork(9)] [warning] Network compiled for 6 shaves, maximum available 10, compiling for 5 shaves likely will yield in better performance
+[camera_node-7] [WARN] [1754234854.782545607] [oak]: Parameter imu.i_rot_cov not found
+[camera_node-7] [WARN] [1754234854.782804847] [oak]: Parameter imu.i_mag_cov not found
+[camera_node-7] [INFO] [1754234859.772081539] [oak]: Published URDF
+[camera_node-7] [WARN] [1754234859.774157199] [oak]: IMU extrinsics are not set. Publishing IMU frame with zero translation and rotation.
+[camera_node-7] [INFO] [1754234859.820172894] [oak]: Camera ready!
+
+
+-------------
+
+botmanager@robotpi4b8g01:~$ ros2 topic echo /rosout
+stamp:
+  sec: 1754234844
+  nanosec: 462799637
+level: 20
+name: point_cloud_container
+msg: 'Load Library: /opt/ros/jazzy/lib/libdepth_image_proc.so'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 116
+---
+stamp:
+  sec: 1754234844
+  nanosec: 931149623
+level: 20
+name: depth_republisher
+msg: 'The ''in_transport'' parameter is set to: raw'
+file: ./src/republish.cpp
+function: initialize
+line: 82
+---
+stamp:
+  sec: 1754234844
+  nanosec: 974795845
+level: 20
+name: depth_republisher
+msg: 'The ''out_transport'' parameter is set to: '
+file: ./src/republish.cpp
+function: initialize
+line: 96
+---
+stamp:
+  sec: 1754234845
+  nanosec: 126235702
+level: 20
+name: map_to_odom_publisher
+msg: 'Spinning until stopped - publishing transform
+
+  translation: (''0.000000'', ''0.000000'', ''0.000000'')
+
+  rotation: (''0.000000'', ''0.000000...'
+file: ./src/static_transform_broadcaster_program.cpp
+function: main
+line: 397
+---
+stamp:
+  sec: 1754234845
+  nanosec: 231011291
+level: 20
+name: rgb_republisher
+msg: 'The ''in_transport'' parameter is set to: raw'
+file: ./src/republish.cpp
+function: initialize
+line: 82
+---
+stamp:
+  sec: 1754234845
+  nanosec: 240924165
+level: 20
+name: rgb_republisher
+msg: 'The ''out_transport'' parameter is set to: '
+file: ./src/republish.cpp
+function: initialize
+line: 96
+---
+stamp:
+  sec: 1754234845
+  nanosec: 234257206
+level: 20
+name: sllidar_node
+msg: SLLidar running on ROS2 package SLLidar.ROS2 SDK Version:1.0.1, SLLIDAR SDK Version:2.1.0
+file: /home/botmanager/lab_ws/src/sllidar_ros2/src/sllidar_node.cpp
+function: work_loop
+line: 263
+---
+stamp:
+  sec: 1754234845
+  nanosec: 393161075
+level: 20
+name: odom_to_base_footprint_publisher
+msg: 'Spinning until stopped - publishing transform
+
+  translation: (''0.000000'', ''0.000000'', ''0.000000'')
+
+  rotation: (''0.000000'', ''0.000000...'
+file: ./src/static_transform_broadcaster_program.cpp
+function: main
+line: 397
+---
+stamp:
+  sec: 1754234845
+  nanosec: 549621433
+level: 20
+name: oak_to_depth_camera_publisher
+msg: 'Spinning until stopped - publishing transform
+
+  translation: (''0.000000'', ''0.000000'', ''0.000000'')
+
+  rotation: (''0.000000'', ''0.000000...'
+file: ./src/static_transform_broadcaster_program.cpp
+function: main
+line: 397
+---
+stamp:
+  sec: 1754234845
+  nanosec: 717699734
+level: 20
+name: robot_state_publisher
+msg: Robot initialized
+file: ./src/robot_state_publisher.cpp
+function: setupURDF
+line: 215
+---
+stamp:
+  sec: 1754234845
+  nanosec: 826737142
+level: 20
+name: sllidar_node
+msg: 'SLLidar S/N: 9BF6E195C1E79ED6B5E29EF11F214A73'
+file: /home/botmanager/lab_ws/src/sllidar_ros2/src/sllidar_node.cpp
+function: getSLLIDARDeviceInfo
+line: 119
+---
+stamp:
+  sec: 1754234845
+  nanosec: 827057641
+level: 20
+name: sllidar_node
+msg: 'Firmware Ver: 1.02'
+file: /home/botmanager/lab_ws/src/sllidar_ros2/src/sllidar_node.cpp
+function: getSLLIDARDeviceInfo
+line: 120
+---
+stamp:
+  sec: 1754234845
+  nanosec: 830307630
+level: 20
+name: sllidar_node
+msg: 'Hardware Rev: 18'
+file: /home/botmanager/lab_ws/src/sllidar_ros2/src/sllidar_node.cpp
+function: getSLLIDARDeviceInfo
+line: 121
+---
+stamp:
+  sec: 1754234845
+  nanosec: 837285736
+level: 20
+name: sllidar_node
+msg: 'SLLidar health status : 0'
+file: /home/botmanager/lab_ws/src/sllidar_ros2/src/sllidar_node.cpp
+function: checkSLLIDARHealth
+line: 131
+---
+stamp:
+  sec: 1754234845
+  nanosec: 837691216
+level: 20
+name: sllidar_node
+msg: 'SLLidar health status : OK.'
+file: /home/botmanager/lab_ws/src/sllidar_ros2/src/sllidar_node.cpp
+function: checkSLLIDARHealth
+line: 134
+---
+stamp:
+  sec: 1754234846
+  nanosec: 200450356
+level: 20
+name: point_cloud_container
+msg: 'Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::ConvertMetricNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 129
+---
+stamp:
+  sec: 1754234846
+  nanosec: 203419031
+level: 20
+name: point_cloud_container
+msg: 'Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::CropForemostNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 129
+---
+stamp:
+  sec: 1754234846
+  nanosec: 203905029
+level: 20
+name: point_cloud_container
+msg: 'Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::DisparityNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 129
+---
+stamp:
+  sec: 1754234846
+  nanosec: 204294991
+level: 20
+name: point_cloud_container
+msg: 'Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 129
+---
+stamp:
+  sec: 1754234846
+  nanosec: 204701175
+level: 20
+name: point_cloud_container
+msg: 'Instantiate class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 131
+---
+stamp:
+  sec: 1754234846
+  nanosec: 238640189
+level: 20
+name: sllidar_node
+msg: 'current scan mode: Standard, sample rate: 5 Khz, max_distance: 16.0 m, scan frequency:10.0 Hz, '
+file: /home/botmanager/lab_ws/src/sllidar_ros2/src/sllidar_node.cpp
+function: work_loop
+line: 347
+---
+stamp:
+  sec: 1754234846
+  nanosec: 748262795
+level: 20
+name: point_cloud_container
+msg: 'Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::ConvertMetricNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 129
+---
+stamp:
+  sec: 1754234846
+  nanosec: 750069826
+level: 20
+name: point_cloud_container
+msg: 'Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzRadialNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 129
+---
+stamp:
+  sec: 1754234846
+  nanosec: 750466121
+level: 20
+name: point_cloud_container
+msg: 'Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyziNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 129
+---
+stamp:
+  sec: 1754234846
+  nanosec: 750919397
+level: 20
+name: point_cloud_container
+msg: 'Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyziRadialNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 129
+---
+stamp:
+  sec: 1754234846
+  nanosec: 751281414
+level: 20
+name: point_cloud_container
+msg: 'Found class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzrgbNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 129
+---
+stamp:
+  sec: 1754234846
+  nanosec: 751718024
+level: 20
+name: point_cloud_container
+msg: 'Instantiate class: rclcpp_components::NodeFactoryTemplate<depth_image_proc::PointCloudXyzrgbNode>'
+file: ./src/component_manager.cpp
+function: create_component_factory
+line: 131
+---
+stamp:
+  sec: 1754234846
+  nanosec: 865713859
+level: 20
+name: oak
+msg: Starting camera.
+file: ./src/camera.cpp
+function: start
+line: 86
+---
+stamp:
+  sec: 1754234846
+  nanosec: 904791468
+level: 20
+name: oak
+msg: No ip/mxid specified, connecting to the next available device.
+file: ./src/camera.cpp
+function: startDevice
+line: 207
+---
+stamp:
+  sec: 1754234848
+  nanosec: 570817578
+level: 20
+name: joint_state_publisher
+msg: Waiting for robot_description to be published on the robot_description topic...
+file: /opt/ros/jazzy/lib/python3.12/site-packages/joint_state_publisher/joint_state_publisher.py
+function: __init__
+line: 308
+---
+stamp:
+  sec: 1754234850
+  nanosec: 391217423
+level: 20
+name: oak
+msg: 'Camera with MXID: 19443010C1CFE42C00 and Name: 1.1.1 connected!'
+file: ./src/camera.cpp
+function: startDevice
+line: 261
+---
+stamp:
+  sec: 1754234850
+  nanosec: 393214880
+level: 20
+name: oak
+msg: 'USB SPEED: HIGH'
+file: ./src/camera.cpp
+function: startDevice
+line: 266
+---
+stamp:
+  sec: 1754234850
+  nanosec: 443717208
+level: 20
+name: oak
+msg: 'Device type: OAK-D-LITE'
+file: ./src/camera.cpp
+function: getDeviceType
+line: 166
+---
+stamp:
+  sec: 1754234850
+  nanosec: 453975970
+level: 20
+name: oak
+msg: 'Pipeline type: RGBD'
+file: ./src/pipeline/pipeline_generator.cpp
+function: createPipeline
+line: 50
+---
+stamp:
+  sec: 1754234850
+  nanosec: 661298471
+level: 30
+name: oak
+msg: Resolution 720P not supported by sensor IMX214. Using default resolution 1080P
+file: ./src/param_handlers/sensor_param_handler.cpp
+function: declareParams
+line: 135
+---
+stamp:
+  sec: 1754234851
+  nanosec: 282827567
+level: 20
+name: oak
+msg: 'NN Family: mobilenet'
+file: ./src/param_handlers/nn_param_handler.cpp
+function: getNNFamily
+line: 48
+---
+stamp:
+  sec: 1754234851
+  nanosec: 502045786
+level: 20
+name: oak
+msg: 'NN input size: 300 x 300. Resizing input image in case of different dimensions.'
+file: ./src/param_handlers/nn_param_handler.cpp
+function: setImageManip
+line: 131
+---
+stamp:
+  sec: 1754234852
+  nanosec: 202488541
+level: 20
+name: oak
+msg: Finished setting up pipeline.
+file: ./src/pipeline/pipeline_generator.cpp
+function: createPipeline
+line: 94
+---
+stamp:
+  sec: 1754234854
+  nanosec: 782545607
+level: 30
+name: oak
+msg: Parameter imu.i_rot_cov not found
+file: ./include/depthai_ros_driver/param_handlers/base_param_handler.hpp
+function: getParam
+line: 30
+---
+stamp:
+  sec: 1754234854
+  nanosec: 782804847
+level: 30
+name: oak
+msg: Parameter imu.i_mag_cov not found
+file: ./include/depthai_ros_driver/param_handlers/base_param_handler.hpp
+function: getParam
+line: 30
+---
+stamp:
+  sec: 1754234859
+  nanosec: 772081539
+level: 20
+name: oak
+msg: Published URDF
+file: ./src/TFPublisher.cpp
+function: publishDescription
+line: 73
+---
+stamp:
+  sec: 1754234859
+  nanosec: 774157199
+level: 30
+name: oak
+msg: IMU extrinsics are not set. Publishing IMU frame with zero translation and rotation.
+file: ./src/TFPublisher.cpp
+function: publishImuTransform
+line: 132
+---
+stamp:
+  sec: 1754234859
+  nanosec: 820172894
+level: 20
+name: oak
+msg: Camera ready!
+file: ./src/camera.cpp
+function: onConfigure
+line: 69
+---

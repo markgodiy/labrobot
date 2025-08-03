@@ -33,14 +33,30 @@ if(BUILD_TESTING)
 endif()
 
 install(
-  DIRECTORY config description launch worlds script
+  DIRECTORY config description launch worlds scripts upython
   DESTINATION share/${PROJECT_NAME}
+)
+
+# Install Python scripts and make them executable
+install(PROGRAMS
+  scripts/autonomous_navigation_node.py
+  scripts/nav_control.py
+  scripts/test_micropython_controller.py
+  scripts/serial_motor_bridge.py
+  scripts/serial_nav_control.py
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 # Ensure all .xacro files are installed
 install(DIRECTORY description/
   DESTINATION share/${PROJECT_NAME}/description
   FILES_MATCHING PATTERN "*.xacro"
+)
+
+# Install MicroPython files
+install(DIRECTORY upython/
+  DESTINATION share/${PROJECT_NAME}/upython
+  FILES_MATCHING PATTERN "*.py"
 )
 
 ament_package()
