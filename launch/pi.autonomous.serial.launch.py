@@ -26,6 +26,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+import os
 
 def generate_launch_description():
     # Package directory
@@ -103,12 +104,7 @@ def generate_launch_description():
     # Serial motor bridge node
     serial_bridge_node = Node(
         package='labrobot',
-        executable='python3',
-        arguments=[PathJoinSubstitution([
-            pkg_share,
-            'scripts',
-            'serial_motor_bridge.py'
-        ])],
+        executable='serial_motor_bridge.py',
         name='serial_motor_bridge',
         output='screen',
         parameters=[{
@@ -125,12 +121,7 @@ def generate_launch_description():
     # Autonomous navigation node
     autonomous_nav_node = Node(
         package='labrobot',
-        executable='python3',
-        arguments=[PathJoinSubstitution([
-            pkg_share,
-            'scripts',
-            'autonomous_navigation_node.py'
-        ])],
+        executable='autonomous_navigation_node.py',
         name='autonomous_navigation_node',
         output='screen',
         parameters=[{
