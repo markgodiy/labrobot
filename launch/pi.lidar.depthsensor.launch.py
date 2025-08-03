@@ -190,14 +190,9 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-    # IMU data republisher for easier RViz access and standard topic naming
-    imu_republisher = Node(
-        package='topic_tools',
-        executable='relay',
-        name='imu_republisher',
-        arguments=['/oak/imu/data', '/imu/data'],
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
+    # Note: Direct topics available from OAK-D Lite:
+    # - /oak/rgb/camera_info & /oak/stereo/camera_info (camera info)
+    # - /oak/imu/data (IMU data for motion tracking)
 
     # Launch!
     return LaunchDescription([
@@ -223,6 +218,5 @@ def generate_launch_description():
         point_cloud_container,  # RGB overlay point cloud processing
         rgb_republisher,  # Easier RViz access to RGB
         depth_republisher,  # Easier RViz access to depth
-        imu_republisher,  # IMU data for motion tracking
-        # Note: Full sensor suite for advanced navigation and perception
+        # Note: Full sensor suite - Direct IMU available at /oak/imu/data
     ])

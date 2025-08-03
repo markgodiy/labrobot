@@ -226,31 +226,11 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-    # Camera info republishers
-    rgb_info_republisher = Node(
-        package='topic_tools',
-        executable='relay',
-        name='rgb_info_republisher',
-        arguments=['/oak/rgb/camera_info', '/camera/rgb/camera_info'],
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
-
-    depth_info_republisher = Node(
-        package='topic_tools',
-        executable='relay',
-        name='depth_info_republisher',
-        arguments=['/oak/stereo/camera_info', '/camera/depth/camera_info'],
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
-
-    # IMU data republisher for easier RViz access and standard topic naming
-    imu_republisher = Node(
-        package='topic_tools',
-        executable='relay',
-        name='imu_republisher',
-        arguments=['/oak/imu/data', '/imu/data'],
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
+    # Note: Camera info and IMU topics available directly from OAK-D Lite:
+    # - /oak/rgb/camera_info (RGB camera info)
+    # - /oak/stereo/camera_info (Depth camera info) 
+    # - /oak/imu/data (IMU data)
+    # Standard republished topics via image_transport already available above
 
     # Launch!
     return LaunchDescription([
@@ -274,9 +254,9 @@ def generate_launch_description():
         depth_compressed_publisher,  # Compressed depth
         rgb_republisher,  # Standard RGB topic
         depth_republisher,  # Standard depth topic
-        rgb_info_republisher,  # RGB camera info
-        depth_info_republisher,  # Depth camera info
-        imu_republisher,  # IMU data for motion tracking
         
-        # Note: Optimized for computer vision, streaming, IMU, and RViz visualization
+        # Note: Direct topics available from OAK-D Lite:
+        # - /oak/rgb/camera_info & /oak/stereo/camera_info (camera info) 
+        # - /oak/imu/data (IMU data for motion tracking)
+        # - Optimized for computer vision, streaming, IMU, and RViz visualization
     ])
