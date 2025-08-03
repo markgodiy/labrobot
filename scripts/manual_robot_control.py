@@ -15,6 +15,7 @@ Commands:
     left [speed] [duration]     - Rotate left
     right [speed] [duration]    - Rotate right
     stop                        - Stop immediately
+    reset-estop                 - Reset emergency stop
     status                      - Show robot status
     test-sequence              - Run a test movement sequence
     
@@ -138,6 +139,18 @@ class ManualRobotControl:
         else:
             print(f"❌ Stop failed: {response.get('message', 'Unknown error')}")
     
+    def reset_emergency_stop(self):
+        """Reset emergency stop"""
+        command = {"cmd": "reset_estop"}
+        
+        print("🔄 Resetting emergency stop...")
+        response = self.send_command(command)
+        
+        if response.get("success", False):
+            print("✅ Emergency stop reset")
+        else:
+            print(f"❌ Reset failed: {response.get('message', 'Unknown error')}")
+    
     def get_status(self):
         """Get robot status"""
         command = {"cmd": "status"}
@@ -222,6 +235,9 @@ def main():
             
         elif command == 'stop':
             controller.stop_robot()
+            
+        elif command == 'reset-estop':
+            controller.reset_emergency_stop()
             
         elif command == 'status':
             controller.get_status()
