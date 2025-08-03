@@ -10,8 +10,9 @@ import xacro
 
 def generate_launch_description():
     """
-    Computer Vision (CV) Pi launcher - Robot model with focus on visual perception and streaming
-    Optimized for RViz visualization with RGB, depth, point clouds, and image processing
+    Full Pi launcher - Robot model with ALL sensors: LIDAR + OAK-D Lite + IMU
+    Complete robot perception suite optimized for computer vision, SLAM, navigation, and obstacle avoidance
+    Includes high-quality streaming, point cloud processing, and comprehensive sensor integration
     """
     # Check if we're told to use sim time
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -70,6 +71,33 @@ def generate_launch_description():
         name='oak_to_depth_camera_publisher',
         arguments=['--x', '0', '--y', '0', '--z', '0', '--qx', '0', '--qy', '0', '--qz', '0', '--qw', '1', '--frame-id', 'depth_camera_link', '--child-frame-id', 'oak'],
         parameters=[{'use_sim_time': use_sim_time}]
+    )
+
+    # RPLIDAR node configuration
+    channel_type = LaunchConfiguration('channel_type', default='serial')
+    serial_port = LaunchConfiguration('serial_port', default='/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_f4ff8904fb63ef118309e1a9c169b110-if00-port0')
+    serial_baudrate = LaunchConfiguration('serial_baudrate', default='460800')
+    frame_id = LaunchConfiguration('frame_id', default='lidar_frame')  # Use your robot's frame
+    inverted = LaunchConfiguration('inverted', default='false')
+    angle_compensate = LaunchConfiguration('angle_compensate', default='true')
+    scan_mode = LaunchConfiguration('scan_mode', default='Standard')
+
+    # RPLIDAR node - requires hardware to be connected
+    rplidar_node = Node(
+        package='sllidar_ros2',
+        executable='sllidar_node',
+        name='sllidar_node',
+        parameters=[
+            {'channel_type': channel_type},
+            {'serial_port': serial_port},
+            {'serial_baudrate': serial_baudrate},
+            {'frame_id': frame_id},
+            {'inverted': inverted},
+            {'angle_compensate': angle_compensate},
+            {'scan_mode': scan_mode},
+            {'use_sim_time': use_sim_time}
+        ],
+        output='screen'
     )
 
     # OAK-D Lite Camera configuration - Optimized for computer vision and streaming
@@ -265,6 +293,15 @@ def generate_launch_description():
             default_value='false',
             description='Use sim time if true'),
 
+        # LIDAR launch arguments
+        DeclareLaunchArgument('channel_type', default_value=channel_type, description='Specifying channel type of lidar'),
+        DeclareLaunchArgument('serial_port', default_value=serial_port, description='Specifying usb port to connected lidar'), 
+        DeclareLaunchArgument('serial_baudrate', default_value=serial_baudrate, description='Specifying usb port baudrate to connected lidar'),
+        DeclareLaunchArgument('frame_id', default_value=frame_id, description='Specifying frame_id of lidar'),
+        DeclareLaunchArgument('inverted', default_value=inverted, description='Specifying whether or not to invert scan data'),
+        DeclareLaunchArgument('angle_compensate', default_value=angle_compensate, description='Specifying whether or not to enable angle_compensate of scan data'),
+        DeclareLaunchArgument('scan_mode', default_value=scan_mode, description='Specifying scan mode of lidar'),
+
         # Core robot nodes
         node_robot_state_publisher,
         node_joint_state_publisher,
@@ -272,7 +309,8 @@ def generate_launch_description():
         static_tf_pub_odom_base,
         static_tf_pub_oak_base,  # Connect OAK-D TF tree to robot
         
-        # Computer vision nodes
+        # Sensor nodes
+        rplidar_node,  # LIDAR for SLAM and navigation
         oak_camera,  # OAK-D Lite with CV-optimized settings
         cv_processing_container,  # Point clouds and image processing
         
@@ -284,6 +322,7 @@ def generate_launch_description():
         
         # Note: Direct topics available from OAK-D Lite:
         # - /oak/rgb/camera_info & /oak/stereo/camera_info (camera info) 
-        # - /oak/imu/data (IMU data for motion tracking)
-        # - Optimized for computer vision, streaming, IMU, and RViz visualization
+        # - /oak/imu/data (IMU data)
+        # - /scan (LIDAR data)
+        # - Optimized for full sensor suite: computer vision, SLAM, navigation, and streaming
     ])

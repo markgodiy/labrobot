@@ -10,8 +10,9 @@ import xacro
 
 def generate_launch_description():
     """
-    Full Pi launcher - Robot model, transforms, LIDAR, and OAK-D Lite depth sensor
-    For complete robot perception with SLAM, navigation, and obstacle avoidance
+    Basic sensors Pi launcher - Robot model, transforms, LIDAR, and OAK-D Lite depth sensor
+    Standard configuration for robot perception with SLAM, navigation, and obstacle avoidance
+    Lower resource usage compared to pi.full.launch.py (15 FPS vs 30 FPS, basic image processing)
     """
     # Check if we're told to use sim time
     use_sim_time = LaunchConfiguration('use_sim_time')
