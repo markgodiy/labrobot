@@ -55,8 +55,8 @@ class AutonomousNavigationNode(Node):
         self.declare_parameter('serial_port', '/dev/ttyACM0')
         self.declare_parameter('min_obstacle_distance', 0.5)  # meters
         self.declare_parameter('max_speed', 70)  # percentage
-        self.declare_parameter('default_speed', 50)  # percentage
-        self.declare_parameter('rotation_speed', 40)  # percentage
+        self.declare_parameter('default_speed', 90)  # percentage (90% minimum for effective movement)
+        self.declare_parameter('rotation_speed', 90)  # percentage (90% minimum for effective turning)
         self.declare_parameter('scan_angle_range', 90)  # degrees (±45° from front)
         self.declare_parameter('depth_obstacle_threshold', 1000)  # mm
         self.declare_parameter('command_timeout', 2.0)  # seconds
@@ -410,11 +410,11 @@ class AutonomousNavigationNode(Node):
             # Path is clear - move forward (reduced threshold for more exploration)
             if min_distance == float('inf') or min_distance > self.min_obstacle_distance:
                 if self.current_action != "forward":
-                    # Adaptive speed based on distance (minimum 85% for motor effectiveness)
+                    # Adaptive speed based on distance (minimum 90% for motor effectiveness)
                     if min_distance == float('inf'):
                         speed_factor = 1.0  # Full speed in open space
                     else:
-                        speed_factor = max(0.85, min(1.0, min_distance / 2.0))  # Never below 85%
+                        speed_factor = max(0.90, min(1.0, min_distance / 2.0))  # Never below 90%
                     linear_speed = (self.default_speed / 100.0) * speed_factor
                     
                     if self.send_movement_command(linear_x=linear_speed):
@@ -425,7 +425,8 @@ class AutonomousNavigationNode(Node):
         elif best_lidar_direction in ["left", "right"]:
             # Obstacle detected - rotate to clear direction (LIDAR-based)
             if self.current_action != f"rotate_{best_lidar_direction}":
-                angular_speed = (self.rotation_speed / 100.0)
+                # Ensure minimum 90% power for effective rotation
+                angular_speed = max(0.90, self.rotation_speed / 100.0)
                 if best_lidar_direction == "right":
                     angular_speed = -angular_speed  # Negative for right turn
                 
@@ -438,7 +439,8 @@ class AutonomousNavigationNode(Node):
         elif best_depth_direction in ["left", "right"]:
             # Obstacle detected - rotate to clear direction (depth-based)
             if self.current_action != f"rotate_{best_depth_direction}":
-                angular_speed = (self.rotation_speed / 100.0)
+                # Ensure minimum 90% power for effective rotation
+                angular_speed = max(0.90, self.rotation_speed / 100.0)
                 if best_depth_direction == "right":
                     angular_speed = -angular_speed  # Negative for right turn
                 
@@ -449,13 +451,13 @@ class AutonomousNavigationNode(Node):
                     self.get_logger().info(f"Rotating {best_depth_direction} to avoid ground obstacle (distance: {min_distance:.2f}m)")
         
         elif best_lidar_direction == "backward" or best_depth_direction == "backward":
-            # No clear path - back up (ensure minimum 85% speed)
+            # No clear path - back up (ensure minimum 90% speed)
             if self.current_action != "backward":
-                linear_speed = -(self.default_speed / 100.0) * 0.85  # 85% speed backward minimum
+                linear_speed = -(self.default_speed / 100.0) * 0.90  # 90% speed backward minimum
                 
                 if self.send_movement_command(linear_x=linear_speed):
                     self.current_action = "backward"
-                    self.get_logger().info(f"Backing up at 85% power - no clear path (distance: {min_distance:.2f}m)")
+                    self.get_logger().info(f"Backing up at 90% power - no clear path (distance: {min_distance:.2f}m)")
         
         else:
             # Stop and reassess
