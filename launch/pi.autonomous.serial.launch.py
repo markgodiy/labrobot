@@ -103,7 +103,12 @@ def generate_launch_description():
     # Serial motor bridge node
     serial_bridge_node = Node(
         package='labrobot',
-        executable='serial_motor_bridge.py',
+        executable='python3',
+        arguments=[PathJoinSubstitution([
+            pkg_share,
+            'scripts',
+            'serial_motor_bridge.py'
+        ])],
         name='serial_motor_bridge',
         output='screen',
         parameters=[{
@@ -120,7 +125,12 @@ def generate_launch_description():
     # Autonomous navigation node
     autonomous_nav_node = Node(
         package='labrobot',
-        executable='autonomous_navigation_node.py',
+        executable='python3',
+        arguments=[PathJoinSubstitution([
+            pkg_share,
+            'scripts',
+            'autonomous_navigation_node.py'
+        ])],
         name='autonomous_navigation_node',
         output='screen',
         parameters=[{
