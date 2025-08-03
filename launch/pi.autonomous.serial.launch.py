@@ -92,7 +92,7 @@ def generate_launch_description():
     # LIDAR configuration arguments (separate from motor controller)
     lidar_serial_port_arg = DeclareLaunchArgument(
         'lidar_serial_port',
-        default_value='/dev/ttyUSB0',
+        default_value='/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_f4ff8904fb63ef118309e1a9c169b110-if00-port0',
         description='Serial port for LIDAR sensor'
     )
     
