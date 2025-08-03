@@ -40,7 +40,6 @@ install(
 # Install Python scripts and make them executable
 install(PROGRAMS
   scripts/autonomous_navigation_node.py
-  scripts/nav_control.py
   scripts/test_micropython_controller.py
   scripts/serial_motor_bridge.py
   scripts/serial_nav_control.py
