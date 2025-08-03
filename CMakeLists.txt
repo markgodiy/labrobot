@@ -45,6 +45,13 @@ install(PROGRAMS
   scripts/test_micropython_controller.py
   scripts/manual_robot_control.py
   scripts/reset_emergency_stop.py
+  scripts/robot_perception_monitor.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install shell scripts
+install(PROGRAMS
+  scripts/monitor_robot.sh
   DESTINATION lib/${PROJECT_NAME}
 )
 
