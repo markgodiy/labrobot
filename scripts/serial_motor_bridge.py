@@ -355,7 +355,8 @@ class SerialMotorBridge(Node):
             })
         elif abs(angular_z) > 0.1:  # Rotation
             direction = "left" if angular_z > 0 else "right"
-            speed = min(100, int(abs(angular_z) * 50))  # Scale to percentage
+            speed = min(100, int(abs(angular_z) * 100))  # Scale to percentage (was 50, now 100)
+            self.get_logger().info(f"Twist rotation: angular_z={angular_z:.3f}, direction={direction}, speed={speed}")
             self.send_command_async({
                 "cmd": "rotate",
                 "dir": direction,

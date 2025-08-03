@@ -429,6 +429,8 @@ class AutonomousNavigationNode(Node):
                 if best_lidar_direction == "right":
                     angular_speed = -angular_speed  # Negative for right turn
                 
+                self.get_logger().info(f"LIDAR rotation: {best_lidar_direction}, angular_speed: {angular_speed:.3f}")
+                
                 if self.send_movement_command(angular_z=angular_speed):
                     self.current_action = f"rotate_{best_lidar_direction}"
                     self.get_logger().info(f"Rotating {best_lidar_direction} to avoid obstacle (distance: {min_distance:.2f}m)")
@@ -439,6 +441,8 @@ class AutonomousNavigationNode(Node):
                 angular_speed = (self.rotation_speed / 100.0)
                 if best_depth_direction == "right":
                     angular_speed = -angular_speed  # Negative for right turn
+                
+                self.get_logger().info(f"Depth rotation: {best_depth_direction}, angular_speed: {angular_speed:.3f}")
                 
                 if self.send_movement_command(angular_z=angular_speed):
                     self.current_action = f"rotate_{best_depth_direction}"
