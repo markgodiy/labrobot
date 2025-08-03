@@ -125,23 +125,32 @@ def generate_launch_description():
         package='rclcpp_components',
         executable='component_container',
         composable_node_descriptions=[
+            # Basic XYZ point cloud (no RGB overlay) - simpler and more reliable
+            ComposableNode(
+                package='depth_image_proc',
+                plugin='depth_image_proc::PointCloudXyzNode',
+                name='point_cloud_xyz_node',
+                remappings=[
+                    ('image_rect', '/oak_camera/stereo/image_raw'),
+                    ('points', '/oak_camera/points_xyz')
+                ],
+                parameters=[{
+                    'use_sim_time': use_sim_time,
+                }]
+            ),
+            # RGB overlay point cloud - following ros-perception/image_pipeline example
             ComposableNode(
                 package='depth_image_proc',
                 plugin='depth_image_proc::PointCloudXyzrgbNode',
                 name='point_cloud_xyzrgb_node',
                 remappings=[
-                    # Map OAK-D camera topics to standard depth_image_proc inputs
+                    # Simplified remapping based on reference - only remap image topics
                     ('rgb/image_rect_color', '/oak_camera/rgb/image_raw'),
-                    ('rgb/camera_info', '/oak_camera/rgb/camera_info'),
                     ('depth_registered/image_rect', '/oak_camera/stereo/image_raw'),
-                    ('depth_registered/camera_info', '/oak_camera/stereo/camera_info'),
-                    # Output colored point cloud
                     ('points', '/oak_camera/points_xyzrgb')
                 ],
                 parameters=[{
                     'use_sim_time': use_sim_time,
-                    'queue_size': 5,  # Synchronization queue size
-                    'approximate_sync': True,  # Use approximate time sync for better performance
                 }]
             ),
         ],
