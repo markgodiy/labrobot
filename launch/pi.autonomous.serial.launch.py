@@ -20,17 +20,18 @@ Parameters:
   - scan_angle_range: LIDAR scan angle range in degrees (default: 90)
 """
 
-from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
 import os
+from ament_index_python.packages import get_package_share_directory
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, ExecuteProcess
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 def generate_launch_description():
-    # Package directory
-    pkg_share = FindPackageShare('labrobot')
+    # Package directory (using the same pattern as working launch file)
+    pkg_path = os.path.join(get_package_share_directory('labrobot'))
+    scripts_path = os.path.join(pkg_path, 'scripts')
     
     # Launch arguments
     serial_port_arg = DeclareLaunchArgument(
@@ -87,70 +88,45 @@ def generate_launch_description():
         description='Start RViz for visualization'
     )
     
-    # Include the full sensor launch (LIDAR + OAK-D Lite + IMU)
+    # Include the basic sensor launch (LIDAR + OAK-D Lite + IMU)
     sensor_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                pkg_share,
-                'launch',
-                'pi.full.launch.py'
-            ])
-        ]),
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_path, 'launch', 'pi.basic.sensors.launch.py')
+        ),
         launch_arguments={
             'use_rviz': LaunchConfiguration('use_rviz')
         }.items()
     )
     
-    # Serial motor bridge node
-    serial_bridge_node = Node(
-        package='labrobot',
-        executable='python3',
-        arguments=[PathJoinSubstitution([
-            pkg_share,
-            'scripts',
-            'serial_motor_bridge.py'
-        ])],
+    # Serial motor bridge node (using ExecuteProcess for Python script)
+    serial_bridge_node = ExecuteProcess(
+        cmd=['python3', os.path.join(scripts_path, 'serial_motor_bridge.py'),
+        '--ros-args',
+        '-p', ['serial_port:=', LaunchConfiguration('serial_port')],
+        '-p', ['baudrate:=', LaunchConfiguration('baudrate')],
+        '-p', 'timeout:=1.0',
+        '-p', 'reconnect_interval:=5.0'
+        ],
         name='serial_motor_bridge',
-        output='screen',
-        parameters=[{
-            'serial_port': LaunchConfiguration('serial_port'),
-            'baudrate': LaunchConfiguration('baudrate'),
-            'timeout': 1.0,
-            'reconnect_interval': 5.0
-        }],
-        remappings=[
-            ('/cmd_vel', '/cmd_vel')
-        ]
+        output='screen'
     )
     
-    # Autonomous navigation node
-    autonomous_nav_node = Node(
-        package='labrobot',
-        executable='python3',
-        arguments=[PathJoinSubstitution([
-            pkg_share,
-            'scripts',
-            'autonomous_navigation_node.py'
-        ])],
+    # Autonomous navigation node (using ExecuteProcess for Python script)
+    autonomous_nav_node = ExecuteProcess(
+        cmd=['python3', os.path.join(scripts_path, 'autonomous_navigation_node.py'),
+        '--ros-args',
+        '-p', ['serial_port:=', LaunchConfiguration('serial_port')],
+        '-p', ['autonomous_enabled:=', LaunchConfiguration('autonomous_enabled')],
+        '-p', ['min_obstacle_distance:=', LaunchConfiguration('min_obstacle_distance')],
+        '-p', ['max_speed:=', LaunchConfiguration('max_speed')],
+        '-p', ['default_speed:=', LaunchConfiguration('default_speed')],
+        '-p', ['rotation_speed:=', LaunchConfiguration('rotation_speed')],
+        '-p', ['scan_angle_range:=', LaunchConfiguration('scan_angle_range')],
+        '-p', 'depth_obstacle_threshold:=1000',
+        '-p', 'command_timeout:=2.0'
+        ],
         name='autonomous_navigation_node',
-        output='screen',
-        parameters=[{
-            'serial_port': LaunchConfiguration('serial_port'),
-            'autonomous_enabled': LaunchConfiguration('autonomous_enabled'),
-            'min_obstacle_distance': LaunchConfiguration('min_obstacle_distance'),
-            'max_speed': LaunchConfiguration('max_speed'),
-            'default_speed': LaunchConfiguration('default_speed'),
-            'rotation_speed': LaunchConfiguration('rotation_speed'),
-            'scan_angle_range': LaunchConfiguration('scan_angle_range'),
-            'depth_obstacle_threshold': 1000,  # mm
-            'command_timeout': 2.0  # seconds
-        }],
-        remappings=[
-            ('/scan', '/scan'),
-            ('/oak/rgb/image_raw', '/oak/rgb/image_raw'),
-            ('/oak/depth/image_raw', '/oak/depth/image_raw'),
-            ('/oak/points', '/oak/points')
-        ]
+        output='screen'
     )
     
     # Startup messages
