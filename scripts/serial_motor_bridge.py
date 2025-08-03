@@ -93,24 +93,35 @@ class SerialMotorBridge(Node):
         try:
             if self.ser and self.ser.is_open:
                 self.ser.close()
+                time.sleep(0.5)  # Wait for port to be fully released
             
             self.ser = serial.Serial(
                 port=self.serial_port,
                 baudrate=self.baudrate,
                 timeout=self.timeout,
-                write_timeout=self.timeout
+                write_timeout=self.timeout,
+                exclusive=True  # Prevent multiple access
             )
+            
+            # Clear buffers to prevent garbled data
+            self.ser.reset_input_buffer()
+            self.ser.reset_output_buffer()
             
             self.connected = True
             self.get_logger().info(f"Connected to {self.serial_port}")
             
+            # Give MicroPython more time to start and settle
+            time.sleep(2.0)
+            
+            # Clear any startup messages
+            self.ser.reset_input_buffer()
+            
             # Send initial ping to verify connection
-            time.sleep(0.5)  # Give MicroPython time to start
-            response = self.send_command({"cmd": "ping"})
+            response = self.send_command({"cmd": "status"}, timeout=3.0)
             if response and response.get("status") == "ok":
-                self.get_logger().info("MicroPython controller responded to ping")
+                self.get_logger().info("MicroPython controller responded successfully")
             else:
-                self.get_logger().warn("No response to ping from MicroPython controller")
+                self.get_logger().warn("No valid response from MicroPython controller")
                 
         except Exception as e:
             self.connected = False
@@ -124,6 +135,9 @@ class SerialMotorBridge(Node):
         
         try:
             with self.serial_lock:
+                # Clear input buffer before sending command
+                self.ser.reset_input_buffer()
+                
                 # Send command
                 cmd_json = json.dumps(cmd_dict) + '\n'
                 self.ser.write(cmd_json.encode('utf-8'))
@@ -132,19 +146,34 @@ class SerialMotorBridge(Node):
                 # Wait for response with timeout
                 start_time = time.time()
                 response_timeout = timeout or self.timeout
+                response_data = ""
                 
                 while time.time() - start_time < response_timeout:
                     if self.ser.in_waiting > 0:
-                        line = self.ser.readline().decode('utf-8').strip()
-                        if line:
-                            try:
-                                response = json.loads(line)
-                                return response
-                            except json.JSONDecodeError:
-                                self.get_logger().warn(f"Invalid JSON response: {line}")
-                    time.sleep(0.01)  # Small delay to prevent busy waiting
+                        # Read available data
+                        data = self.ser.read(self.ser.in_waiting).decode('utf-8', errors='ignore')
+                        response_data += data
+                        
+                        # Look for complete JSON lines
+                        lines = response_data.split('\n')
+                        for line in lines[:-1]:  # Process all complete lines
+                            line = line.strip()
+                            if line and line.startswith('{') and line.endswith('}'):
+                                try:
+                                    response = json.loads(line)
+                                    return response
+                                except json.JSONDecodeError as e:
+                                    self.get_logger().warn(f"JSON decode error: {e} for line: {line}")
+                                    continue
+                        
+                        # Keep the last incomplete line
+                        response_data = lines[-1]
+                    else:
+                        time.sleep(0.05)  # Longer delay to reduce CPU usage
                 
                 self.get_logger().warn(f"Timeout waiting for response to command: {cmd_dict}")
+                if response_data.strip():
+                    self.get_logger().warn(f"Partial response received: {response_data[:100]}...")
                 return None
                 
         except Exception as e:
@@ -170,6 +199,8 @@ class SerialMotorBridge(Node):
     
     def read_serial_loop(self):
         """Background thread to read serial data"""
+        response_buffer = ""
+        
         while rclpy.ok():
             if not self.connected:
                 time.sleep(self.reconnect_interval)
@@ -177,19 +208,46 @@ class SerialMotorBridge(Node):
                 continue
             
             try:
-                if self.ser and self.ser.is_open and self.ser.in_waiting > 0:
-                    line = self.ser.readline().decode('utf-8').strip()
-                    if line:
-                        try:
-                            msg = json.loads(line)
-                            self.process_incoming_message(msg)
-                        except json.JSONDecodeError:
-                            # Might be a plain text log message
-                            self.publish_log(line)
-                
-            except Exception as e:
+                if self.ser and self.ser.is_open:
+                    # Check for available data with timeout
+                    if self.ser.in_waiting > 0:
+                        # Read available data in chunks
+                        data = self.ser.read(min(self.ser.in_waiting, 1024)).decode('utf-8', errors='ignore')
+                        response_buffer += data
+                        
+                        # Process complete lines
+                        while '\n' in response_buffer:
+                            line, response_buffer = response_buffer.split('\n', 1)
+                            line = line.strip()
+                            
+                            if line:
+                                # Try to parse as JSON
+                                if line.startswith('{') and line.endswith('}'):
+                                    try:
+                                        msg = json.loads(line)
+                                        self.process_incoming_message(msg)
+                                    except json.JSONDecodeError as e:
+                                        # Log partial JSON for debugging
+                                        if len(line) > 50:
+                                            self.get_logger().warn(f"JSON decode error: {e} for line: {line[:50]}...")
+                                        else:
+                                            self.get_logger().warn(f"JSON decode error: {e} for line: {line}")
+                                        self.publish_log(f"Raw data: {line}")
+                                else:
+                                    # Plain text message
+                                    self.publish_log(line)
+                    else:
+                        # No data available, small sleep
+                        time.sleep(0.1)
+                else:
+                    time.sleep(1.0)
+                    
+            except serial.SerialException as e:
                 self.get_logger().error(f"Serial read error: {e}")
                 self.connected = False
+                time.sleep(2.0)
+            except Exception as e:
+                self.get_logger().error(f"Unexpected error in read loop: {e}")
                 time.sleep(1.0)
     
     def process_incoming_message(self, msg):
@@ -328,23 +386,36 @@ class SerialMotorBridge(Node):
 
 def main(args=None):
     rclpy.init(args=args)
+    node = None
     
     try:
         node = SerialMotorBridge()
         rclpy.spin(node)
     except KeyboardInterrupt:
-        pass
+        print("\nShutting down serial motor bridge...")
     except Exception as e:
         print(f"Error: {e}")
     finally:
-        if 'node' in locals():
+        if node is not None:
             # Send emergency stop before shutdown
             try:
-                node.emergency_stop_robot()
-            except:
-                pass
-            node.destroy_node()
-        rclpy.shutdown()
+                if node.connected and node.ser and node.ser.is_open:
+                    node.emergency_stop_robot()
+                    time.sleep(0.5)  # Give time for command to be sent
+                    node.ser.close()
+            except Exception as e:
+                print(f"Error during emergency stop: {e}")
+            
+            try:
+                node.destroy_node()
+            except Exception as e:
+                print(f"Error destroying node: {e}")
+        
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception as e:
+            print(f"Error during RCL shutdown: {e}")
 
 if __name__ == '__main__':
     main()

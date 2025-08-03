@@ -372,21 +372,35 @@ def process_serial_command(command_dict):
         return {"status": "error", "message": f"Command processing error: {e}"}
 
 def read_serial_input():
-    """Read and process serial input"""
-    global serial_buffer
-    
-    if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
-        try:
-            line = sys.stdin.readline().strip()
-            if line:
-                try:
-                    command_dict = json.loads(line)
-                    response = process_serial_command(command_dict)
-                    send_serial_response(response)
-                except json.JSONDecodeError:
-                    send_serial_response({"status": "error", "message": "Invalid JSON"})
-        except Exception as e:
-            send_serial_response({"status": "error", "message": f"Serial read error: {e}"})
+    """Read and process serial input - improved version"""
+    try:
+        # Check if there's input available
+        if hasattr(sys.stdin, 'any'):
+            # MicroPython specific
+            if sys.stdin.any():
+                line = sys.stdin.readline().strip()
+                if line:
+                    try:
+                        command_dict = json.loads(line)
+                        response = process_serial_command(command_dict)
+                        send_serial_response(response)
+                    except json.JSONDecodeError as e:
+                        send_serial_response({"status": "error", "message": f"Invalid JSON: {str(e)}"})
+        else:
+            # Fallback method - try to read with short timeout
+            import select
+            if select.select([sys.stdin], [], [], 0)[0]:
+                line = sys.stdin.readline().strip()
+                if line:
+                    try:
+                        command_dict = json.loads(line)
+                        response = process_serial_command(command_dict)
+                        send_serial_response(response)
+                    except json.JSONDecodeError as e:
+                        send_serial_response({"status": "error", "message": f"Invalid JSON: {str(e)}"})
+    except Exception as e:
+        # Don't send error response for every read attempt to avoid spam
+        pass
 
 # Optional WiFi server for testing
 def enable_wifi_server():
@@ -414,13 +428,6 @@ def enable_wifi_server():
     except Exception as e:
         return {"status": "error", "message": f"WiFi setup error: {e}"}
 
-# Try to import select for non-blocking serial read
-try:
-    import select
-    SELECT_AVAILABLE = True
-except ImportError:
-    SELECT_AVAILABLE = False
-
 def main_loop():
     """Main control loop"""
     log_message("MicroPython Motor Controller started - Serial mode", "INFO")
@@ -435,17 +442,7 @@ def main_loop():
             check_movement_timeout()
             
             # Process serial commands
-            if SELECT_AVAILABLE:
-                read_serial_input()
-            else:
-                # Fallback for systems without select
-                try:
-                    if sys.stdin.readline():
-                        # There's data available, but we can't process it without select
-                        # This is a limitation on some MicroPython implementations
-                        pass
-                except:
-                    pass
+            read_serial_input()
             
             # Small delay to prevent excessive CPU usage
             sleep_ms(10)
