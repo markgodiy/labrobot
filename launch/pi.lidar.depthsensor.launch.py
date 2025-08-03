@@ -90,29 +90,45 @@ def generate_launch_description():
         output='screen'
     )
 
-    # OAK-D Lite Camera configuration (FULL CONFIGURATION)
+    # OAK-D Lite Camera configuration - Following official depthai-ros documentation
     oak_camera = Node(
         package='depthai_ros_driver',
-        executable='camera_node',  # Correct executable name
-        name='oak_camera',
+        executable='camera_node',
+        name='oak',  # Standard name following depthai-ros conventions
         parameters=[{
-            'camera_model': 'OAK-D-LITE',
-            'tf_prefix': 'oak_camera',  # Use oak_camera prefix to match actual topics
-            'mode': 'depth',  # Full depth mode now that power is stable
-            'depth_enabled': True,  # Enable depth for navigation/obstacle avoidance
-            'stereo_enabled': True,
-            'rgb_enabled': True,
-            'pointcloud_enabled': False,  # Disable built-in, use RGB overlay version
+            # Basic camera configuration
+            'camera.i_pipeline_type': 'RGBD',  # Correct parameter name
+            'camera.i_publish_tf_from_calibration': True,
+            'camera.i_tf_base_frame': 'oak',
+            'camera.i_tf_camera_name': 'oak',
+            'camera.i_tf_parent_frame': 'oak_camera_link',  # Link to robot URDF
             'use_sim_time': use_sim_time,
-            # Quality settings optimized for Pi performance
-            'rgb_resolution': '720p',
-            'depth_resolution': '720p',
-            'fps': 15,  # Reasonable FPS for Pi performance
-            'publish_tf_from_calibration': True,
-            # Advanced settings
-            'enable_imu': True,
-            'enable_ir': False,  # Disable IR to save bandwidth
-            'depth_filter_size': 5,  # Smooth depth data
+            
+            # RGB sensor configuration
+            'rgb.i_publish_topic': True,
+            'rgb.i_fps': 15.0,
+            'rgb.i_resolution': '720P',  # Standard resolution names
+            
+            # Stereo/Depth configuration  
+            'stereo.i_publish_topic': True,
+            'stereo.i_fps': 15.0,
+            'stereo.i_resolution': '720P',
+            'stereo.i_align_depth': True,  # Align depth to RGB
+            
+            # Left/Right camera configuration (for stereo)
+            'left.i_publish_topic': False,  # We mainly need depth output
+            'right.i_publish_topic': False,
+            
+            # Disable built-in point cloud (we'll use external processing)
+            # No direct pointcloud parameter - handled by stereo output
+            
+            # IMU configuration
+            'imu.i_publish_topic': True,
+            'pipeline_gen.i_enable_imu': True,
+            
+            # Performance settings for Pi
+            'rgb.i_low_bandwidth': False,  # Keep quality up for point cloud processing
+            'stereo.i_low_bandwidth': False,
         }],
         output='screen'
     )
@@ -131,8 +147,8 @@ def generate_launch_description():
                 plugin='depth_image_proc::PointCloudXyzNode',
                 name='point_cloud_xyz_node',
                 remappings=[
-                    ('image_rect', '/oak_camera/stereo/image_raw'),
-                    ('points', '/oak_camera/points_xyz')
+                    ('image_rect', '/oak/stereo/image_raw'),
+                    ('points', '/oak/points_xyz')
                 ],
                 parameters=[{
                     'use_sim_time': use_sim_time,
@@ -145,9 +161,9 @@ def generate_launch_description():
                 name='point_cloud_xyzrgb_node',
                 remappings=[
                     # Simplified remapping based on reference - only remap image topics
-                    ('rgb/image_rect_color', '/oak_camera/rgb/image_raw'),
-                    ('depth_registered/image_rect', '/oak_camera/stereo/image_raw'),
-                    ('points', '/oak_camera/points_xyzrgb')
+                    ('rgb/image_rect_color', '/oak/rgb/image_raw'),
+                    ('depth_registered/image_rect', '/oak/stereo/image_raw'),
+                    ('points', '/oak/points_xyzrgb')
                 ],
                 parameters=[{
                     'use_sim_time': use_sim_time,
@@ -162,7 +178,7 @@ def generate_launch_description():
         package='image_transport',
         executable='republish',
         name='rgb_republisher',
-        arguments=['raw', 'in:=/oak_camera/rgb/image_raw', 'out:=/camera/rgb/image_raw'],
+        arguments=['raw', 'in:=/oak/rgb/image_raw', 'out:=/camera/rgb/image_raw'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
@@ -170,7 +186,7 @@ def generate_launch_description():
         package='image_transport',
         executable='republish',
         name='depth_republisher',
-        arguments=['raw', 'in:=/oak_camera/stereo/image_raw', 'out:=/camera/depth/image_raw'],
+        arguments=['raw', 'in:=/oak/stereo/image_raw', 'out:=/camera/depth/image_raw'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
