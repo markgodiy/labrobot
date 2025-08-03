@@ -16,7 +16,9 @@ Parameters:
   - baudrate: Serial baudrate (default: 115200)
   - autonomous_enabled: Start with autonomous mode enabled (default: true)
   - min_obstacle_distance: Minimum distance to obstacles in meters (default: 0.5)
-  - max_speed: Maximum motor speed percentage (default: 70)
+  - max_speed: Maximum motor speed percentage (default: 85)
+  - default_speed: Default motor speed percentage (default: 75, minimum for effective movement)
+  - rotation_speed: Rotation speed percentage (default: 75, minimum for effective turning)
   - scan_angle_range: LIDAR scan angle range in degrees (default: 90)
 """
 
@@ -61,19 +63,19 @@ def generate_launch_description():
     
     max_speed_arg = DeclareLaunchArgument(
         'max_speed',
-        default_value='70',
+        default_value='100',
         description='Maximum motor speed percentage'
     )
     
     default_speed_arg = DeclareLaunchArgument(
         'default_speed',
-        default_value='50',
+        default_value='75',
         description='Default motor speed percentage'
     )
     
     rotation_speed_arg = DeclareLaunchArgument(
         'rotation_speed',
-        default_value='40',
+        default_value='75',
         description='Rotation speed percentage'
     )
     
@@ -136,9 +138,9 @@ def generate_launch_description():
             '-p', 'serial_port:=/dev/ttyACM0',  # MicroPython controller port
             '-p', 'autonomous_enabled:=true',
             '-p', 'min_obstacle_distance:=0.5',
-            '-p', 'max_speed:=70',
-            '-p', 'default_speed:=50',
-            '-p', 'rotation_speed:=40',
+            '-p', 'max_speed:=100',
+            '-p', 'default_speed:=75',
+            '-p', 'rotation_speed:=75',
             '-p', 'scan_angle_range:=90',
             '-p', 'depth_obstacle_threshold:=1000',
             '-p', 'command_timeout:=2.0'

@@ -174,23 +174,23 @@ class ManualRobotControl:
         print("🧪 Starting test movement sequence...")
         
         # Forward
-        self.move_forward(30, 2)
+        self.move_forward(75, 2)
         time.sleep(2.5)
         
         # Turn left  
-        self.rotate_left(25, 1)
+        self.rotate_left(75, 1)
         time.sleep(1.5)
         
         # Forward again
-        self.move_forward(30, 1.5)
+        self.move_forward(75, 1.5)
         time.sleep(2)
         
         # Turn right
-        self.rotate_right(25, 1)
+        self.rotate_right(75, 1)
         time.sleep(1.5)
         
         # Backward
-        self.move_backward(25, 1)
+        self.move_backward(75, 1)
         time.sleep(1.5)
         
         # Stop
@@ -214,22 +214,22 @@ def main():
         controller = ManualRobotControl()
         
         if command == 'forward':
-            speed = int(sys.argv[2]) if len(sys.argv) > 2 else 50
+            speed = int(sys.argv[2]) if len(sys.argv) > 2 else 75  # Default 75% minimum
             duration = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0
             controller.move_forward(speed, duration)
             
         elif command == 'backward':
-            speed = int(sys.argv[2]) if len(sys.argv) > 2 else 50
+            speed = int(sys.argv[2]) if len(sys.argv) > 2 else 75  # Default 75% minimum
             duration = float(sys.argv[3]) if len(sys.argv) > 3 else 2.0
             controller.move_backward(speed, duration)
             
         elif command == 'left':
-            speed = int(sys.argv[2]) if len(sys.argv) > 2 else 40
+            speed = int(sys.argv[2]) if len(sys.argv) > 2 else 75  # Default 75% minimum
             duration = float(sys.argv[3]) if len(sys.argv) > 3 else 1.0
             controller.rotate_left(speed, duration)
             
         elif command == 'right':
-            speed = int(sys.argv[2]) if len(sys.argv) > 2 else 40
+            speed = int(sys.argv[2]) if len(sys.argv) > 2 else 75  # Default 75% minimum
             duration = float(sys.argv[3]) if len(sys.argv) > 3 else 1.0
             controller.rotate_right(speed, duration)
             

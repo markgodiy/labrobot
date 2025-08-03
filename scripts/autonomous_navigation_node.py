@@ -387,17 +387,17 @@ class AutonomousNavigationNode(Node):
             # Path is clear - move forward (reduced threshold for more exploration)
             if min_distance == float('inf') or min_distance > self.min_obstacle_distance:
                 if self.current_action != "forward":
-                    # Adaptive speed based on distance
+                    # Adaptive speed based on distance (minimum 75% for motor effectiveness)
                     if min_distance == float('inf'):
                         speed_factor = 1.0  # Full speed in open space
                     else:
-                        speed_factor = min(1.0, min_distance / 2.0)
+                        speed_factor = max(0.75, min(1.0, min_distance / 2.0))  # Never below 75%
                     linear_speed = (self.default_speed / 100.0) * speed_factor
                     
                     if self.send_movement_command(linear_x=linear_speed):
                         self.current_action = "forward"
                         distance_str = f"{min_distance:.2f}m" if min_distance != float('inf') else "open space"
-                        self.get_logger().info(f"Moving forward at {linear_speed:.2f} (distance: {distance_str})")
+                        self.get_logger().info(f"Moving forward at {linear_speed:.2f} ({speed_factor*100:.0f}% power, distance: {distance_str})")
         
         elif best_lidar_direction in ["left", "right"]:
             # Obstacle detected - rotate to clear direction (LIDAR-based)
@@ -422,13 +422,13 @@ class AutonomousNavigationNode(Node):
                     self.get_logger().info(f"Rotating {best_depth_direction} to avoid ground obstacle (distance: {min_distance:.2f}m)")
         
         elif best_lidar_direction == "backward" or best_depth_direction == "backward":
-            # No clear path - back up
+            # No clear path - back up (ensure minimum 75% speed)
             if self.current_action != "backward":
-                linear_speed = -(self.default_speed / 200.0)  # Half speed backward
+                linear_speed = -(self.default_speed / 100.0) * 0.75  # 75% speed backward minimum
                 
                 if self.send_movement_command(linear_x=linear_speed):
                     self.current_action = "backward"
-                    self.get_logger().info(f"Backing up - no clear path (distance: {min_distance:.2f}m)")
+                    self.get_logger().info(f"Backing up at 75% power - no clear path (distance: {min_distance:.2f}m)")
         
         else:
             # Stop and reassess
