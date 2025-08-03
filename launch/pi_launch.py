@@ -23,7 +23,12 @@ def generate_launch_description():
         package='robot_state_publisher',
         executable='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_description, 'use_sim_time': use_sim_time}]
+        parameters=[{
+            'robot_description': robot_description,
+            'use_sim_time': use_sim_time,
+            'publish_frequency': 30.0,  # Ensure regular publishing
+            'ignore_timestamp': False
+        }]
     )
 
     # Create a joint_state_publisher node (non-GUI) - for real robot without simulation
@@ -32,7 +37,12 @@ def generate_launch_description():
         executable='joint_state_publisher',
         name='joint_state_publisher',
         output='screen',
-        parameters=[{'use_sim_time': use_sim_time}]
+        parameters=[{
+            'robot_description': robot_description,
+            'use_sim_time': use_sim_time,
+            'rate': 30.0,  # Publishing rate in Hz
+            'source_list': ['left_wheel_to_base_link', 'right_wheel_to_base_link']
+        }]
     )
 
     # Static transform publisher for map->odom (if needed for navigation)
