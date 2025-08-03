@@ -37,6 +37,9 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Create empty lib directory to satisfy ROS 2 package structure requirements
+install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory \${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME})")
+
 # Ensure all .xacro files are installed
 install(DIRECTORY description/
   DESTINATION share/${PROJECT_NAME}/description
