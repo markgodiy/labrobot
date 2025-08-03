@@ -88,7 +88,7 @@ def generate_launch_description():
         description='Start RViz for visualization'
     )
     
-    # LIDAR configuration arguments
+    # LIDAR configuration arguments (separate from motor controller)
     lidar_serial_port_arg = DeclareLaunchArgument(
         'lidar_serial_port',
         default_value='/dev/ttyUSB0',
@@ -130,7 +130,7 @@ def generate_launch_description():
     autonomous_nav_node = ExecuteProcess(
         cmd=['python3', os.path.join(scripts_path, 'autonomous_navigation_node.py'),
         '--ros-args',
-        '-p', ['serial_port:=', LaunchConfiguration('serial_port')],
+        '-p', ['serial_port:=', LaunchConfiguration('serial_port')],  # MicroPython controller port
         '-p', ['autonomous_enabled:=', LaunchConfiguration('autonomous_enabled')],
         '-p', ['min_obstacle_distance:=', LaunchConfiguration('min_obstacle_distance')],
         '-p', ['max_speed:=', LaunchConfiguration('max_speed')],
