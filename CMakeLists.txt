@@ -43,6 +43,7 @@ install(PROGRAMS
   scripts/autonomous_navigation_node.py
   scripts/serial_nav_control.py
   scripts/test_micropython_controller.py
+  scripts/manual_robot_control.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

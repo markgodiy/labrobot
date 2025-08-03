@@ -37,6 +37,8 @@ import json
 import numpy as np
 from threading import Lock
 import time
+import cv2
+from cv_bridge import CvBridge
 
 # ROS 2 message types
 from sensor_msgs.msg import LaserScan, Image, PointCloud2
@@ -76,6 +78,9 @@ class AutonomousNavigationNode(Node):
         self.latest_rgb_image = None
         self.latest_controller_status = None
         self.navigation_active = False
+        
+        # CV Bridge for image processing
+        self.bridge = CvBridge()
         self.emergency_stop_active = False
         self.last_command_time = time.time()
         self.state_lock = Lock()
@@ -284,6 +289,75 @@ class AutonomousNavigationNode(Node):
         
         return not obstacle_detected, min_distance, direction
     
+    def analyze_depth_obstacles(self, depth_image_msg):
+        """Analyze depth camera data for ground-level obstacles"""
+        if not depth_image_msg:
+            return True, float('inf'), "no_depth_data"
+        
+        try:
+            # Convert ROS image to OpenCV format
+            depth_image = self.bridge.imgmsg_to_cv2(depth_image_msg, desired_encoding="passthrough")
+            
+            # Get image dimensions
+            height, width = depth_image.shape
+            
+            # Define region of interest (bottom center of image for ground-level detection)
+            roi_height = height // 3  # Bottom third of image
+            roi_width = width // 2    # Center half of image
+            roi_y_start = height - roi_height
+            roi_x_start = width // 4
+            roi_x_end = roi_x_start + roi_width
+            
+            # Extract ROI for analysis
+            depth_roi = depth_image[roi_y_start:height, roi_x_start:roi_x_end]
+            
+            # Convert to meters (OAK-D typically gives depth in mm)
+            if depth_image.dtype == np.uint16:
+                depth_roi_meters = depth_roi.astype(np.float32) / 1000.0
+            else:
+                depth_roi_meters = depth_roi.astype(np.float32)
+            
+            # Remove invalid depth values (0 or too far)
+            valid_depths = depth_roi_meters[(depth_roi_meters > 0.1) & (depth_roi_meters < 5.0)]
+            
+            if len(valid_depths) == 0:
+                return True, float('inf'), "no_valid_depth"
+            
+            min_depth = np.min(valid_depths)
+            avg_depth = np.mean(valid_depths)
+            
+            # Check for ground-level obstacles
+            depth_threshold_meters = self.depth_obstacle_threshold / 1000.0  # Convert mm to meters
+            ground_obstacle_detected = min_depth < depth_threshold_meters
+            
+            # Analyze left/right distribution for direction recommendation
+            roi_center = roi_width // 2
+            left_roi = depth_roi_meters[:, :roi_center]
+            right_roi = depth_roi_meters[:, roi_center:]
+            
+            left_valid = left_roi[(left_roi > 0.1) & (left_roi < 5.0)]
+            right_valid = right_roi[(right_roi > 0.1) & (right_roi < 5.0)]
+            
+            direction = "forward"
+            if ground_obstacle_detected:
+                left_min = np.min(left_valid) if len(left_valid) > 0 else float('inf')
+                right_min = np.min(right_valid) if len(right_valid) > 0 else float('inf')
+                
+                if left_min > depth_threshold_meters and right_min <= depth_threshold_meters:
+                    direction = "left"
+                elif right_min > depth_threshold_meters and left_min <= depth_threshold_meters:
+                    direction = "right"
+                elif left_min > depth_threshold_meters and right_min > depth_threshold_meters:
+                    direction = "left" if left_min > right_min else "right"
+                else:
+                    direction = "backward"
+            
+            return not ground_obstacle_detected, min_depth, direction
+            
+        except Exception as e:
+            self.get_logger().warn(f"Depth analysis failed: {e}")
+            return True, float('inf'), "depth_error"
+    
     def navigation_loop(self):
         """Main navigation decision loop"""
         if not self.autonomous_enabled or self.emergency_stop_active:
@@ -291,40 +365,63 @@ class AutonomousNavigationNode(Node):
         
         with self.state_lock:
             scan_data = self.latest_scan
+            depth_data = self.latest_depth_image
         
         # If no sensor data, stop if not already idle
-        if not scan_data:
+        if not scan_data and not depth_data:
             if self.current_action != "idle":
                 self.stop_movement()
                 self.current_action = "idle"
             return
         
         # Analyze obstacles
-        path_clear, min_distance, best_direction = self.analyze_lidar_obstacles(scan_data)
+        lidar_path_clear, min_lidar_distance, best_lidar_direction = self.analyze_lidar_obstacles(scan_data)
+        depth_path_clear, min_depth_distance, best_depth_direction = self.analyze_depth_obstacles(depth_data)
+        
+        # Combine LIDAR and depth camera results
+        path_clear = lidar_path_clear and depth_path_clear
+        min_distance = min(min_lidar_distance, min_depth_distance)
         
         # Make navigation decision
-        if path_clear and min_distance > self.min_obstacle_distance * 1.5:
-            # Path is clear - move forward
-            if self.current_action != "forward":
-                speed_factor = min(1.0, min_distance / 2.0)
-                linear_speed = (self.default_speed / 100.0) * speed_factor
-                
-                if self.send_movement_command(linear_x=linear_speed):
-                    self.current_action = "forward"
-                    self.get_logger().info(f"Moving forward at {linear_speed:.2f} (distance: {min_distance:.2f}m)")
+        if path_clear:
+            # Path is clear - move forward (reduced threshold for more exploration)
+            if min_distance == float('inf') or min_distance > self.min_obstacle_distance:
+                if self.current_action != "forward":
+                    # Adaptive speed based on distance
+                    if min_distance == float('inf'):
+                        speed_factor = 1.0  # Full speed in open space
+                    else:
+                        speed_factor = min(1.0, min_distance / 2.0)
+                    linear_speed = (self.default_speed / 100.0) * speed_factor
+                    
+                    if self.send_movement_command(linear_x=linear_speed):
+                        self.current_action = "forward"
+                        distance_str = f"{min_distance:.2f}m" if min_distance != float('inf') else "open space"
+                        self.get_logger().info(f"Moving forward at {linear_speed:.2f} (distance: {distance_str})")
         
-        elif best_direction in ["left", "right"]:
-            # Obstacle detected - rotate to clear direction
-            if self.current_action != f"rotate_{best_direction}":
+        elif best_lidar_direction in ["left", "right"]:
+            # Obstacle detected - rotate to clear direction (LIDAR-based)
+            if self.current_action != f"rotate_{best_lidar_direction}":
                 angular_speed = (self.rotation_speed / 100.0)
-                if best_direction == "right":
+                if best_lidar_direction == "right":
                     angular_speed = -angular_speed  # Negative for right turn
                 
                 if self.send_movement_command(angular_z=angular_speed):
-                    self.current_action = f"rotate_{best_direction}"
-                    self.get_logger().info(f"Rotating {best_direction} to avoid obstacle (distance: {min_distance:.2f}m)")
+                    self.current_action = f"rotate_{best_lidar_direction}"
+                    self.get_logger().info(f"Rotating {best_lidar_direction} to avoid obstacle (distance: {min_distance:.2f}m)")
         
-        elif best_direction == "backward":
+        elif best_depth_direction in ["left", "right"]:
+            # Obstacle detected - rotate to clear direction (depth-based)
+            if self.current_action != f"rotate_{best_depth_direction}":
+                angular_speed = (self.rotation_speed / 100.0)
+                if best_depth_direction == "right":
+                    angular_speed = -angular_speed  # Negative for right turn
+                
+                if self.send_movement_command(angular_z=angular_speed):
+                    self.current_action = f"rotate_{best_depth_direction}"
+                    self.get_logger().info(f"Rotating {best_depth_direction} to avoid ground obstacle (distance: {min_distance:.2f}m)")
+        
+        elif best_lidar_direction == "backward" or best_depth_direction == "backward":
             # No clear path - back up
             if self.current_action != "backward":
                 linear_speed = -(self.default_speed / 200.0)  # Half speed backward
