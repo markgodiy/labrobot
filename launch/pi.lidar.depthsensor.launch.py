@@ -63,6 +63,16 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
+    # Static transform publisher to connect OAK-D base frame to robot's depth camera frame
+    # This ensures the OAK-D TF tree is properly connected to the robot
+    static_tf_pub_oak_base = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='oak_to_depth_camera_publisher',
+        arguments=['--x', '0', '--y', '0', '--z', '0', '--qx', '0', '--qy', '0', '--qz', '0', '--qw', '1', '--frame-id', 'depth_camera_link', '--child-frame-id', 'oak'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # RPLIDAR node configuration
     channel_type = LaunchConfiguration('channel_type', default='serial')
     serial_port = LaunchConfiguration('serial_port', default='/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_f4ff8904fb63ef118309e1a9c169b110-if00-port0')
@@ -101,7 +111,7 @@ def generate_launch_description():
             'camera.i_publish_tf_from_calibration': True,
             'camera.i_tf_base_frame': 'oak',
             'camera.i_tf_camera_name': 'oak',
-            'camera.i_tf_parent_frame': 'oak_camera_link',  # Link to robot URDF
+            'camera.i_tf_parent_frame': 'depth_camera_link',  # Link to robot URDF depth_camera_link
             'use_sim_time': use_sim_time,
             
             # RGB sensor configuration
@@ -221,6 +231,7 @@ def generate_launch_description():
         node_joint_state_publisher,
         static_tf_pub_map_odom,
         static_tf_pub_odom_base,
+        static_tf_pub_oak_base,  # Connect OAK-D TF tree to robot
         rplidar_node,
         oak_camera,  # Full OAK-D Lite configuration
         point_cloud_container,  # RGB overlay point cloud processing

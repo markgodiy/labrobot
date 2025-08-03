@@ -62,6 +62,16 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
+    # Static transform publisher to connect OAK-D base frame to robot's depth camera frame
+    # This ensures the OAK-D TF tree is properly connected to the robot
+    static_tf_pub_oak_base = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='oak_to_depth_camera_publisher',
+        arguments=['--x', '0', '--y', '0', '--z', '0', '--qx', '0', '--qy', '0', '--qz', '0', '--qw', '1', '--frame-id', 'depth_camera_link', '--child-frame-id', 'oak'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # OAK-D Lite Camera configuration - Optimized for computer vision and streaming
     oak_camera = Node(
         package='depthai_ros_driver',
@@ -73,7 +83,7 @@ def generate_launch_description():
             'camera.i_publish_tf_from_calibration': True,
             'camera.i_tf_base_frame': 'oak',
             'camera.i_tf_camera_name': 'oak',
-            'camera.i_tf_parent_frame': 'oak_camera_link',
+            'camera.i_tf_parent_frame': 'depth_camera_link',  # Link to robot URDF depth_camera_link
             'use_sim_time': use_sim_time,
             
             # RGB sensor configuration - Higher quality for CV
@@ -260,6 +270,7 @@ def generate_launch_description():
         node_joint_state_publisher,
         static_tf_pub_map_odom,
         static_tf_pub_odom_base,
+        static_tf_pub_oak_base,  # Connect OAK-D TF tree to robot
         
         # Computer vision nodes
         oak_camera,  # OAK-D Lite with CV-optimized settings
