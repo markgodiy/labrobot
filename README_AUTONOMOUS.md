@@ -304,7 +304,7 @@ ros2 node list | grep serial_motor_bridge
 ros2 topic echo /motor_controller/status --max-count 5
 
 # If serial bridge is missing, check launch logs:
-# Look at the terminal where you ran the launch command for errors
+ros2 topic echo /motor_controller/status --max-count 5
 ```
 
 **Step 4a: If Serial Bridge Node is Missing**
@@ -423,3 +423,100 @@ The system provides comprehensive status information:
 - **Command timing and safety**
 
 Use `serial_nav_control.py --monitor` for real-time status display.
+
+## Starting Movement
+
+### System Status Check
+
+Before starting movement, verify the system is ready:
+
+```bash
+# Check current status
+python3 src/labrobot/scripts/serial_nav_control.py --status
+```
+
+Expected ready status:
+- 🔗 Motor Controller: ✅ CONNECTED  
+- 🚨 Emergency Stop: ✅ NORMAL
+- 🔗 Controller Connected: ✅ YES
+
+### Starting Autonomous Navigation
+
+Once the system shows it's connected and emergency stop is cleared:
+
+```bash
+# Method 1: Enable autonomous mode (if not already enabled)
+python3 src/labrobot/scripts/serial_nav_control.py --autonomous on
+
+# Method 2: Use ROS 2 service call
+ros2 service call /set_autonomous_mode std_srvs/srv/SetBool "data: true"
+```
+
+**Important**: The navigation system will only start moving when:
+1. Autonomous mode is enabled ✅
+2. Emergency stop is cleared ✅  
+3. A clear path is detected (no obstacles in front)
+4. LIDAR sensor is providing valid scan data
+
+### Manual Movement (Testing)
+
+For testing or manual control, disable autonomous mode first:
+
+```bash
+# Disable autonomous mode
+python3 src/labrobot/scripts/serial_nav_control.py --autonomous off
+
+# Manual movement commands
+python3 src/labrobot/scripts/serial_nav_control.py --move forward --speed 30 --duration 2
+python3 src/labrobot/scripts/serial_nav_control.py --rotate left --speed 25 --duration 1
+python3 src/labrobot/scripts/serial_nav_control.py --stop
+```
+
+### Troubleshooting "Idle" Status
+
+If the system shows "Current Action: idle" but won't move:
+
+```bash
+# 1. Check LIDAR data is available
+ros2 topic echo /scan --max-count 1
+# Should show laser scan data, not empty
+
+# 2. Check for obstacles in front
+# Look at the LIDAR ranges in the front sector (center of array)
+# Values should be > min_obstacle_distance (default 0.5m)
+
+# 3. Verify navigation node is processing
+ros2 topic echo /navigation/state
+# Should show navigation decisions and obstacle analysis
+
+# 4. Check navigation logs
+# Look at terminal where launch file is running for navigation messages
+
+# 5. Force a navigation decision (if safe)
+# Temporarily reduce obstacle distance parameter
+ros2 launch labrobot pi.autonomous.serial.launch.py min_obstacle_distance:=0.3
+```
+
+### Quick Start Checklist
+
+1. ✅ **System Connected**: Controller shows CONNECTED status
+2. ✅ **Emergency Stop Clear**: Shows NORMAL (not ACTIVE)  
+3. ✅ **Autonomous Mode**: Enable with `--autonomous on`
+4. ✅ **Clear Path**: Check LIDAR shows no close obstacles
+5. ✅ **Sensor Data**: Verify `/scan` topic has valid data
+6. 🚀 **Movement**: Should start automatically when path is clear
+
+### Emergency Commands
+
+Always keep these ready:
+
+```bash
+# Immediate stop
+python3 src/labrobot/scripts/serial_nav_control.py --emergency-stop
+
+# Quick disable autonomous
+python3 src/labrobot/scripts/serial_nav_control.py --autonomous off
+
+# Manual stop
+python3 src/labrobot/scripts/serial_nav_control.py --stop
+```

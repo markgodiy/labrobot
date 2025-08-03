@@ -209,14 +209,28 @@ class SerialNavigationController(Node):
         """Get and display system status"""
         if monitor:
             print("📊 Monitoring status (Press Ctrl+C to stop)...")
+            print("Loading initial data...")
+            
             try:
                 while True:
+                    # Clear screen and move cursor to top
+                    print("\033[2J\033[H", end="")
+                    
+                    # Display header
+                    print("📊 LIVE MONITORING - Press Ctrl+C to stop")
+                    print(f"🕐 Updated: {time.strftime('%H:%M:%S')}")
+                    
+                    # Display status
                     self.display_status()
+                    
+                    # Wait and spin to receive updates
                     time.sleep(1.0)
-                    # Spin to receive updates
                     rclpy.spin_once(self, timeout_sec=0.1)
+                    
             except KeyboardInterrupt:
-                print("\n👋 Monitoring stopped")
+                # Clear screen one final time and show exit message
+                print("\033[2J\033[H", end="")
+                print("👋 Monitoring stopped")
         else:
             # Spin briefly to get latest status
             for _ in range(10):
@@ -225,7 +239,7 @@ class SerialNavigationController(Node):
     
     def display_status(self):
         """Display current status with enhanced monitoring"""
-        print("\n" + "="*80)
+        print("="*80)
         print("🤖 SERIAL AUTONOMOUS NAVIGATION STATUS - ENHANCED MONITORING")
         print("="*80)
         

@@ -88,13 +88,28 @@ def generate_launch_description():
         description='Start RViz for visualization'
     )
     
+    # LIDAR configuration arguments
+    lidar_serial_port_arg = DeclareLaunchArgument(
+        'lidar_serial_port',
+        default_value='/dev/ttyUSB0',
+        description='Serial port for LIDAR sensor'
+    )
+    
+    lidar_baudrate_arg = DeclareLaunchArgument(
+        'lidar_baudrate',  
+        default_value='460800',
+        description='LIDAR serial baudrate'
+    )
+    
     # Include the basic sensor launch (LIDAR + OAK-D Lite + IMU)
     sensor_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_path, 'launch', 'pi.basic.sensors.launch.py')
         ),
         launch_arguments={
-            'use_rviz': LaunchConfiguration('use_rviz')
+            'use_rviz': LaunchConfiguration('use_rviz'),
+            'serial_port': LaunchConfiguration('lidar_serial_port'),
+            'serial_baudrate': LaunchConfiguration('lidar_baudrate')
         }.items()
     )
     
@@ -161,6 +176,8 @@ def generate_launch_description():
         rotation_speed_arg,
         scan_angle_range_arg,
         use_rviz_arg,
+        lidar_serial_port_arg,
+        lidar_baudrate_arg,
         
         # Startup messages
         startup_message,
