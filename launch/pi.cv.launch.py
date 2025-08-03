@@ -49,7 +49,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='map_to_odom_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'map', 'odom'],
+        arguments=['--x', '0', '--y', '0', '--z', '0', '--qx', '0', '--qy', '0', '--qz', '0', '--qw', '1', '--frame-id', 'map', '--child-frame-id', 'odom'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
@@ -58,7 +58,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='odom_to_base_footprint_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_footprint'],
+        arguments=['--x', '0', '--y', '0', '--z', '0', '--qx', '0', '--qy', '0', '--qz', '0', '--qw', '1', '--frame-id', 'odom', '--child-frame-id', 'base_footprint'],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
@@ -190,7 +190,11 @@ def generate_launch_description():
         package='image_transport',
         executable='republish',
         name='rgb_compressed_publisher',
-        arguments=['raw', 'compressed', 'in:=/oak/rgb/image_raw', 'out:=/oak/rgb/compressed'],
+        arguments=['raw', 'compressed'],
+        remappings=[
+            ('in', '/oak/rgb/image_raw'),
+            ('out', '/oak/rgb/compressed')
+        ],
         parameters=[{
             'use_sim_time': use_sim_time,
             'compressed.jpeg_quality': 90,  # High quality for CV
@@ -201,7 +205,11 @@ def generate_launch_description():
         package='image_transport',
         executable='republish',
         name='depth_compressed_publisher',
-        arguments=['raw', 'compressedDepth', 'in:=/oak/stereo/image_raw', 'out:=/oak/stereo/compressed'],
+        arguments=['raw', 'compressedDepth'],
+        remappings=[
+            ('in', '/oak/stereo/image_raw'),
+            ('out', '/oak/stereo/compressed')
+        ],
         parameters=[{
             'use_sim_time': use_sim_time,
             'compressedDepth.depth_max': 10.0,  # 10 meter max depth
@@ -214,7 +222,11 @@ def generate_launch_description():
         package='image_transport',
         executable='republish',
         name='rgb_republisher',
-        arguments=['raw', 'in:=/oak/rgb/image_raw', 'out:=/camera/rgb/image_raw'],
+        arguments=['raw'],
+        remappings=[
+            ('in', '/oak/rgb/image_raw'),
+            ('out', '/camera/rgb/image_raw')
+        ],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
@@ -222,7 +234,11 @@ def generate_launch_description():
         package='image_transport',
         executable='republish',
         name='depth_republisher',
-        arguments=['raw', 'in:=/oak/stereo/image_raw', 'out:=/camera/depth/image_raw'],
+        arguments=['raw'],
+        remappings=[
+            ('in', '/oak/stereo/image_raw'),
+            ('out', '/camera/depth/image_raw')
+        ],
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
