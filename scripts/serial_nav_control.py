@@ -224,46 +224,111 @@ class SerialNavigationController(Node):
             self.display_status()
     
     def display_status(self):
-        """Display current status"""
-        print("\n" + "="*60)
-        print("🤖 SERIAL AUTONOMOUS NAVIGATION STATUS")
-        print("="*60)
+        """Display current status with enhanced monitoring"""
+        print("\n" + "="*80)
+        print("🤖 SERIAL AUTONOMOUS NAVIGATION STATUS - ENHANCED MONITORING")
+        print("="*80)
         
         # Motor controller status
         if self.latest_motor_status:
             if 'error' not in self.latest_motor_status:
-                print(f"Motor Controller: ✅ CONNECTED")
+                print(f"🔗 Motor Controller: ✅ CONNECTED")
+                
+                # Basic status
                 if self.latest_motor_status.get('type') == 'status':
-                    print(f"  Autonomous Mode: {'🟢 ENABLED' if self.latest_motor_status.get('autonomous_mode') else '🔴 DISABLED'}")
-                    print(f"  Movement Status: {'🏃 MOVING' if self.latest_motor_status.get('is_moving') else '⏸️  STOPPED'}")
-                    print(f"  Emergency Stop: {'🚨 ACTIVE' if self.latest_motor_status.get('emergency_stop') else '✅ NORMAL'}")
-                    print(f"  Current Speed: {self.latest_motor_status.get('current_speed', 0)}")
-                    print(f"  WiFi Enabled: {'📶 YES' if self.latest_motor_status.get('wifi_enabled') else '📵 NO'}")
-                    print(f"  Uptime: {self.latest_motor_status.get('uptime_ms', 0)}ms")
+                    autonomous = self.latest_motor_status.get('autonomous_mode', False)
+                    is_moving = self.latest_motor_status.get('is_moving', False)
+                    emergency_stop = self.latest_motor_status.get('emergency_stop', True)
+                    health_status = self.latest_motor_status.get('health_status', 'unknown')
+                    
+                    print(f"  🎯 Autonomous Mode: {'🟢 ENABLED' if autonomous else '🔴 DISABLED'}")
+                    print(f"  🏃 Movement Status: {'🏃 MOVING' if is_moving else '⏸️  STOPPED'}")
+                    print(f"  🚨 Emergency Stop: {'🚨 ACTIVE' if emergency_stop else '✅ NORMAL'}")
+                    print(f"  💗 Health Status: {health_status.upper()}")
+                    print(f"  ⚡ Current Speed: {self.latest_motor_status.get('current_speed', 0)}")
+                    print(f"  🎯 Target Speed: {self.latest_motor_status.get('target_speed', 0)}")
+                    print(f"  📶 WiFi Enabled: {'📶 YES' if self.latest_motor_status.get('wifi_enabled') else '📵 NO'}")
+                    print(f"  ⏱️  Uptime: {self.latest_motor_status.get('uptime_ms', 0) / 1000:.1f}s")
+                    print(f"  🕐 Last Command: {self.latest_motor_status.get('last_command_age_ms', 0)}ms ago")
+                    
+                    # Enhanced monitoring data
+                    movement = self.latest_motor_status.get('movement', {})
+                    if movement:
+                        move_progress = movement.get('move_progress_percent', 0)
+                        rotation_progress = movement.get('rotation_progress_percent', 0)
+                        time_remaining = movement.get('time_remaining_ms', 0)
+                        
+                        if move_progress > 0:
+                            print(f"  📈 Move Progress: {move_progress:.1f}% ({time_remaining}ms remaining)")
+                        if rotation_progress > 0:
+                            print(f"  🔄 Rotation Progress: {rotation_progress:.1f}% ({time_remaining}ms remaining)")
+                    
+                    hardware = self.latest_motor_status.get('hardware', {})
+                    if hardware:
+                        print(f"  💡 LED State: {'🟢 ON' if hardware.get('led_state') else '⚫ OFF'}")
+                        print(f"  ⚙️  PWM Frequency: {hardware.get('motor_pwm_freq', 0)}Hz")
+                
+                # Heartbeat data
+                elif self.latest_motor_status.get('type') == 'heartbeat':
+                    commands = self.latest_motor_status.get('commands_received', 0)
+                    errors = self.latest_motor_status.get('total_errors', 0)
+                    serial_errors = self.latest_motor_status.get('serial_errors', 0)
+                    json_errors = self.latest_motor_status.get('json_errors', 0)
+                    
+                    print(f"  💓 Heartbeat Data:")
+                    print(f"    📊 Commands Received: {commands}")
+                    print(f"    ❌ Total Errors: {errors}")
+                    print(f"    📡 Serial Errors: {serial_errors}")
+                    print(f"    � JSON Errors: {json_errors}")
+                
+                # Diagnostic data
+                elif self.latest_motor_status.get('type') in ['diagnostics', 'periodic_diagnostics']:
+                    print(f"  🔧 Diagnostic Data:")
+                    
+                    system = self.latest_motor_status.get('system', {})
+                    if system:
+                        print(f"    📊 Commands: {system.get('total_commands', 0)}")
+                        print(f"    ❌ Errors: {system.get('total_errors', 0)}")
+                        print(f"    📡 Serial Errors: {system.get('serial_read_errors', 0)}")
+                        print(f"    � JSON Errors: {system.get('json_parse_errors', 0)}")
+                        if system.get('last_error'):
+                            print(f"    🚨 Last Error: {system.get('last_error')}")
+                    
+                    comm = self.latest_motor_status.get('communication', {})
+                    if comm:
+                        cmd_age = comm.get('last_command_age_ms', 0)
+                        timeout = comm.get('command_timeout_ms', 3000)
+                        print(f"    🕐 Command Age: {cmd_age}ms (timeout: {timeout}ms)")
+                        print(f"    💓 Heartbeat Age: {comm.get('last_heartbeat_age_ms', 0)}ms")
+                
+                version = self.latest_motor_status.get('version')
+                if version:
+                    print(f"  📦 Version: {version}")
+                    
             else:
-                print(f"Motor Controller: ❌ ERROR - {self.latest_motor_status['error']}")
+                print(f"🔗 Motor Controller: ❌ ERROR - {self.latest_motor_status['error']}")
         else:
-            print(f"Motor Controller: ❓ NO STATUS RECEIVED")
+            print(f"🔗 Motor Controller: ❓ NO STATUS RECEIVED")
         
-        # Navigation status
+        # Navigation status (existing code)
         if self.latest_nav_debug:
             if 'error' not in self.latest_nav_debug:
-                print(f"\nNavigation System:")
-                print(f"  Current Action: {self.latest_nav_debug.get('current_action', 'unknown')}")
-                print(f"  Autonomous Enabled: {'🟢 YES' if self.latest_nav_debug.get('autonomous_enabled') else '🔴 NO'}")
-                print(f"  Obstacle Detected: {'🚫 YES' if self.latest_nav_debug.get('obstacle_detected') else '✅ NO'}")
-                print(f"  Path Clear: {'✅ YES' if self.latest_nav_debug.get('path_clear') else '🚫 NO'}")
-                print(f"  Emergency Stop: {'🚨 ACTIVE' if self.latest_nav_debug.get('emergency_stop') else '✅ NORMAL'}")
-                print(f"  Controller Connected: {'✅ YES' if self.latest_nav_debug.get('controller_connected') else '❌ NO'}")
+                print(f"\n🧭 Navigation System:")
+                print(f"  🎯 Current Action: {self.latest_nav_debug.get('current_action', 'unknown')}")
+                print(f"  🤖 Autonomous Enabled: {'🟢 YES' if self.latest_nav_debug.get('autonomous_enabled') else '🔴 NO'}")
+                print(f"  🚧 Obstacle Detected: {'🚫 YES' if self.latest_nav_debug.get('obstacle_detected') else '✅ NO'}")
+                print(f"  🛤️  Path Clear: {'✅ YES' if self.latest_nav_debug.get('path_clear') else '🚫 NO'}")
+                print(f"  🚨 Emergency Stop: {'🚨 ACTIVE' if self.latest_nav_debug.get('emergency_stop') else '✅ NORMAL'}")
+                print(f"  🔗 Controller Connected: {'✅ YES' if self.latest_nav_debug.get('controller_connected') else '❌ NO'}")
             else:
-                print(f"\nNavigation System: ❌ ERROR - {self.latest_nav_debug['error']}")
+                print(f"\n🧭 Navigation System: ❌ ERROR - {self.latest_nav_debug['error']}")
         else:
-            print(f"\nNavigation System: ❓ NO DEBUG INFO RECEIVED")
+            print(f"\n🧭 Navigation System: ❓ NO DEBUG DATA RECEIVED")
         
         if self.latest_nav_state:
-            print(f"  Navigation State: {self.latest_nav_state}")
+            print(f"  📊 Navigation State: {self.latest_nav_state}")
         
-        print("="*60)
+        print("="*80)
 
 def main():
     parser = argparse.ArgumentParser(description='Serial Autonomous Navigation Control')

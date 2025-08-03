@@ -128,26 +128,41 @@ class MicroPythonTester:
         print("\nTesting emergency stop...")
         
         # First, reset any existing emergency stop
+        print("  Resetting any existing emergency stop...")
         reset_result = self.send_command({'cmd': 'reset_estop'})
         time.sleep(0.5)
+        
+        # Check initial status - should not be in emergency stop
+        status = self.send_command({'cmd': 'status'})
+        if status and status.get('emergency_stop'):
+            print("  WARNING: Emergency stop still active after reset")
         
         # Activate emergency stop
         result = self.send_command({'cmd': 'estop'})
         if result and result.get('status') == 'ok':
-            print("  PASS: Emergency stop activated")
+            print("  PASS: Emergency stop command accepted")
             time.sleep(0.5)
             
-            # Check status
+            # Check status - should now be in emergency stop
             status = self.send_command({'cmd': 'status'})
-            if status and (status.get('emergency_stop') or status.get('data', {}).get('emergency_stop')):
+            if status and status.get('emergency_stop'):
                 print("  PASS: Emergency stop status confirmed")
                 
                 # Reset emergency stop
                 reset_result = self.send_command({'cmd': 'reset_estop'})
                 if reset_result and reset_result.get('status') == 'ok':
                     print("  PASS: Emergency stop reset successful")
-                    self.test_results.append(('Emergency Stop', True, 'OK'))
-                    return True
+                    
+                    # Verify emergency stop is cleared
+                    final_status = self.send_command({'cmd': 'status'})
+                    if final_status and not final_status.get('emergency_stop'):
+                        print("  PASS: Emergency stop cleared")
+                        self.test_results.append(('Emergency Stop', True, 'OK'))
+                        return True
+                    else:
+                        print("  FAIL: Emergency stop not cleared after reset")
+                        self.test_results.append(('Emergency Stop', False, 'Not cleared'))
+                        return False
                 else:
                     message = reset_result.get('message', 'No response') if reset_result else 'No response'
                     print(f"  FAIL: Emergency stop reset failed: {message}")
@@ -159,7 +174,7 @@ class MicroPythonTester:
                 return False
         else:
             message = result.get('message', 'No response') if result else 'No response'
-            print(f"  FAIL: Emergency stop failed: {message}")
+            print(f"  FAIL: Emergency stop command failed: {message}")
             self.test_results.append(('Emergency Stop', False, message))
             return False
     

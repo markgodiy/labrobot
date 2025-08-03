@@ -65,8 +65,8 @@ class NavigationState:
         self.target_speed = 0
         self.is_moving = False
         self.autonomous_mode = False
-        self.emergency_stop_active = False
-        self.last_command_time = 0
+        self.emergency_stop_active = True  # Start in emergency stop for safety
+        self.last_command_time = ticks_ms()  # Initialize with current time
         self.command_timeout_ms = 3000  # 3 second timeout for serial
         self.ramp_step = 3000
         self.ramp_delay_ms = 50
@@ -77,6 +77,16 @@ class NavigationState:
         self.move_duration = 0
         self.rotation_start_time = 0
         self.rotation_duration = 0
+        
+        # Monitoring and diagnostics
+        self.total_commands_received = 0
+        self.total_errors = 0
+        self.last_error_message = ""
+        self.last_error_time = 0
+        self.heartbeat_interval_ms = 5000  # Send heartbeat every 5 seconds
+        self.last_heartbeat_time = ticks_ms()
+        self.serial_read_errors = 0
+        self.json_parse_errors = 0
         
 nav_state = NavigationState()
 
@@ -113,6 +123,37 @@ def log_message(message, level="INFO"):
         "timestamp": ticks_ms()
     }
     send_serial_response(log_dict)
+
+def log_error(message, error_type="GENERAL"):
+    """Log error with tracking"""
+    global nav_state
+    nav_state.total_errors += 1
+    nav_state.last_error_message = f"{error_type}: {message}"
+    nav_state.last_error_time = ticks_ms()
+    log_message(nav_state.last_error_message, "ERROR")
+
+def send_heartbeat():
+    """Send periodic heartbeat with system status"""
+    global nav_state
+    current_time = ticks_ms()
+    
+    if ticks_diff(current_time, nav_state.last_heartbeat_time) >= nav_state.heartbeat_interval_ms:
+        nav_state.last_heartbeat_time = current_time
+        
+        heartbeat_data = {
+            "type": "heartbeat",
+            "timestamp": current_time,
+            "uptime_ms": current_time,
+            "health_status": "healthy" if not nav_state.emergency_stop_active else "emergency_stop",
+            "is_moving": nav_state.is_moving,
+            "autonomous_mode": nav_state.autonomous_mode,
+            "commands_received": nav_state.total_commands_received,
+            "total_errors": nav_state.total_errors,
+            "serial_errors": nav_state.serial_read_errors,
+            "json_errors": nav_state.json_parse_errors
+        }
+        
+        send_serial_response(heartbeat_data)
 
 def percent_to_pwm(percent):
     """Convert percentage to PWM value with minimum threshold"""
@@ -279,23 +320,112 @@ def check_movement_timeout():
     return False
 
 def get_status():
-    """Get current navigation status"""
+    """Get current navigation status with enhanced monitoring data"""
     global nav_state
+    current_time = ticks_ms()
+    
+    # Calculate movement progress for timed movements
+    move_progress = 0
+    rotation_progress = 0
+    time_remaining_ms = 0
+    
+    if nav_state.is_moving:
+        if nav_state.move_duration > 0:
+            elapsed = ticks_diff(current_time, nav_state.move_start_time)
+            move_progress = min(100, (elapsed / nav_state.move_duration) * 100)
+            time_remaining_ms = max(0, nav_state.move_duration - elapsed)
+        elif nav_state.rotation_duration > 0:
+            elapsed = ticks_diff(current_time, nav_state.rotation_start_time)
+            rotation_progress = min(100, (elapsed / nav_state.rotation_duration) * 100)
+            time_remaining_ms = max(0, nav_state.rotation_duration - elapsed)
+    
+    # System health indicators
+    last_command_age = ticks_diff(current_time, nav_state.last_command_time)
+    health_status = "healthy"
+    if nav_state.emergency_stop_active:
+        health_status = "emergency_stop"
+    elif last_command_age > nav_state.command_timeout_ms and nav_state.autonomous_mode:
+        health_status = "timeout_warning"
+    elif last_command_age > (nav_state.command_timeout_ms * 0.8) and nav_state.autonomous_mode:
+        health_status = "timeout_approaching"
+    
     return {
         "type": "status",
+        "timestamp": current_time,
         "autonomous_mode": nav_state.autonomous_mode,
         "is_moving": nav_state.is_moving,
         "current_speed": nav_state.current_speed,
+        "target_speed": nav_state.target_speed,
         "emergency_stop": nav_state.emergency_stop_active,
-        "last_command_age_ms": ticks_diff(ticks_ms(), nav_state.last_command_time),
+        "last_command_age_ms": last_command_age,
+        "command_timeout_ms": nav_state.command_timeout_ms,
+        "health_status": health_status,
         "wifi_enabled": nav_state.wifi_enabled,
-        "uptime_ms": ticks_ms()
+        "uptime_ms": current_time,
+        "movement": {
+            "move_progress_percent": move_progress,
+            "rotation_progress_percent": rotation_progress,
+            "time_remaining_ms": time_remaining_ms,
+            "move_duration_ms": nav_state.move_duration,
+            "rotation_duration_ms": nav_state.rotation_duration
+        },
+        "hardware": {
+            "led_state": led.value(),
+            "motor_pwm_freq": ena_pwm.freq(),
+            "ramp_step": nav_state.ramp_step,
+            "ramp_delay_ms": nav_state.ramp_delay_ms
+        },
+        "version": "2.1.0"
+    }
+
+def get_diagnostics():
+    """Get detailed diagnostic information"""
+    global nav_state
+    current_time = ticks_ms()
+    
+    return {
+        "type": "diagnostics",
+        "timestamp": current_time,
+        "system": {
+            "uptime_ms": current_time,
+            "total_commands": nav_state.total_commands_received,
+            "total_errors": nav_state.total_errors,
+            "serial_read_errors": nav_state.serial_read_errors,
+            "json_parse_errors": nav_state.json_parse_errors,
+            "last_error": nav_state.last_error_message,
+            "last_error_time": nav_state.last_error_time,
+            "memory_free": None  # Could add gc.mem_free() if available
+        },
+        "communication": {
+            "last_command_age_ms": ticks_diff(current_time, nav_state.last_command_time),
+            "command_timeout_ms": nav_state.command_timeout_ms,
+            "heartbeat_interval_ms": nav_state.heartbeat_interval_ms,
+            "last_heartbeat_age_ms": ticks_diff(current_time, nav_state.last_heartbeat_time)
+        },
+        "motors": {
+            "current_speed": nav_state.current_speed,
+            "target_speed": nav_state.target_speed,
+            "is_moving": nav_state.is_moving,
+            "ramp_step": nav_state.ramp_step,
+            "ramp_delay_ms": nav_state.ramp_delay_ms,
+            "pwm_frequency": ena_pwm.freq()
+        },
+        "safety": {
+            "emergency_stop_active": nav_state.emergency_stop_active,
+            "autonomous_mode": nav_state.autonomous_mode,
+            "safety_timer_active": True
+        },
+        "wifi": {
+            "available": WIFI_AVAILABLE,
+            "enabled": nav_state.wifi_enabled
+        }
     }
 
 def process_serial_command(command_dict):
     """Process command received over serial"""
     global nav_state
     nav_state.last_command_time = ticks_ms()
+    nav_state.total_commands_received += 1
     
     try:
         cmd = command_dict.get('cmd', '').lower()
@@ -305,6 +435,18 @@ def process_serial_command(command_dict):
             speed = command_dict.get('speed', 60)
             duration = command_dict.get('duration', 0)
             
+            # Validate direction
+            if direction not in ['forward', 'backward']:
+                return {"status": "error", "message": f"Invalid direction: {direction}. Use 'forward' or 'backward'"}
+            
+            # Validate speed
+            if not (0 <= speed <= 100):
+                return {"status": "error", "message": f"Invalid speed: {speed}. Must be 0-100"}
+            
+            # Validate duration
+            if duration < 0:
+                return {"status": "error", "message": f"Invalid duration: {duration}. Must be >= 0"}
+            
             success = False
             if direction == 'forward':
                 success = move_forward(speed, duration)
@@ -312,14 +454,26 @@ def process_serial_command(command_dict):
                 success = move_backward(speed, duration)
             
             if success:
-                return {"status": "ok", "message": f"Moving {direction} at {speed}%"}
+                return {"status": "ok", "message": f"Moving {direction} at {speed}%", "command_id": nav_state.total_commands_received}
             else:
-                return {"status": "error", "message": "Emergency stop active"}
+                return {"status": "error", "message": "Emergency stop active", "command_id": nav_state.total_commands_received}
         
         elif cmd == 'rotate':
             direction = command_dict.get('dir', 'left')
             speed = command_dict.get('speed', 50)
             duration = command_dict.get('duration', 0)
+            
+            # Validate direction
+            if direction not in ['left', 'right']:
+                return {"status": "error", "message": f"Invalid direction: {direction}. Use 'left' or 'right'"}
+            
+            # Validate speed
+            if not (0 <= speed <= 100):
+                return {"status": "error", "message": f"Invalid speed: {speed}. Must be 0-100"}
+            
+            # Validate duration
+            if duration < 0:
+                return {"status": "error", "message": f"Invalid duration: {duration}. Must be >= 0"}
             
             success = False
             if direction == 'left':
@@ -328,29 +482,34 @@ def process_serial_command(command_dict):
                 success = rotate_right(speed, duration)
             
             if success:
-                return {"status": "ok", "message": f"Rotating {direction} at {speed}%"}
+                return {"status": "ok", "message": f"Rotating {direction} at {speed}%", "command_id": nav_state.total_commands_received}
             else:
-                return {"status": "error", "message": "Emergency stop active"}
+                return {"status": "error", "message": "Emergency stop active", "command_id": nav_state.total_commands_received}
         
         elif cmd == 'stop':
             smooth_stop()
-            return {"status": "ok", "message": "Stopped"}
+            return {"status": "ok", "message": "Stopped", "command_id": nav_state.total_commands_received}
         
         elif cmd == 'estop':
             emergency_stop()
-            return {"status": "ok", "message": "Emergency stop activated"}
+            return {"status": "ok", "message": "Emergency stop activated", "command_id": nav_state.total_commands_received}
         
         elif cmd == 'reset_estop':
             reset_emergency_stop()
-            return {"status": "ok", "message": "Emergency stop reset"}
+            return {"status": "ok", "message": "Emergency stop reset", "command_id": nav_state.total_commands_received}
         
         elif cmd == 'autonomous':
             mode = command_dict.get('mode', 'on')
+            if mode not in ['on', 'off']:
+                return {"status": "error", "message": f"Invalid mode: {mode}. Use 'on' or 'off'"}
             nav_state.autonomous_mode = (mode == 'on')
-            return {"status": "ok", "message": f"Autonomous mode: {nav_state.autonomous_mode}"}
+            return {"status": "ok", "message": f"Autonomous mode: {nav_state.autonomous_mode}", "command_id": nav_state.total_commands_received}
         
         elif cmd == 'status':
             return get_status()
+        
+        elif cmd == 'diagnostics':
+            return get_diagnostics()
         
         elif cmd == 'wifi':
             action = command_dict.get('action', 'status')
@@ -358,21 +517,24 @@ def process_serial_command(command_dict):
                 return enable_wifi_server()
             elif action == 'disable':
                 nav_state.wifi_enabled = False
-                return {"status": "ok", "message": "WiFi disabled"}
+                return {"status": "ok", "message": "WiFi disabled", "command_id": nav_state.total_commands_received}
             else:
-                return {"status": "ok", "message": f"WiFi available: {WIFI_AVAILABLE}, enabled: {nav_state.wifi_enabled}"}
+                return {"status": "ok", "message": f"WiFi available: {WIFI_AVAILABLE}, enabled: {nav_state.wifi_enabled}", "command_id": nav_state.total_commands_received}
         
         elif cmd == 'ping':
-            return {"status": "ok", "message": "pong", "timestamp": ticks_ms()}
+            return {"status": "ok", "message": "pong", "timestamp": ticks_ms(), "command_id": nav_state.total_commands_received}
         
         else:
-            return {"status": "error", "message": f"Unknown command: {cmd}"}
+            return {"status": "error", "message": f"Unknown command: {cmd}", "available_commands": ["move", "rotate", "stop", "estop", "reset_estop", "autonomous", "status", "diagnostics", "wifi", "ping"]}
     
     except Exception as e:
-        return {"status": "error", "message": f"Command processing error: {e}"}
+        log_error(f"Command processing error: {e}", "COMMAND_PROCESSING")
+        return {"status": "error", "message": f"Command processing error: {e}", "command_id": nav_state.total_commands_received}
 
 def read_serial_input():
-    """Read and process serial input - improved version"""
+    """Read and process serial input - improved version with error tracking"""
+    global nav_state
+    
     try:
         # Check if there's input available
         if hasattr(sys.stdin, 'any'):
@@ -385,7 +547,15 @@ def read_serial_input():
                         response = process_serial_command(command_dict)
                         send_serial_response(response)
                     except json.JSONDecodeError as e:
-                        send_serial_response({"status": "error", "message": f"Invalid JSON: {str(e)}"})
+                        nav_state.json_parse_errors += 1
+                        error_response = {
+                            "status": "error", 
+                            "message": f"Invalid JSON: {str(e)}", 
+                            "raw_input": line[:50] + "..." if len(line) > 50 else line,
+                            "parse_errors": nav_state.json_parse_errors
+                        }
+                        send_serial_response(error_response)
+                        log_error(f"JSON parse error: {str(e)}", "JSON_PARSE")
         else:
             # Fallback method - try to read with short timeout
             import select
@@ -397,10 +567,20 @@ def read_serial_input():
                         response = process_serial_command(command_dict)
                         send_serial_response(response)
                     except json.JSONDecodeError as e:
-                        send_serial_response({"status": "error", "message": f"Invalid JSON: {str(e)}"})
+                        nav_state.json_parse_errors += 1
+                        error_response = {
+                            "status": "error", 
+                            "message": f"Invalid JSON: {str(e)}", 
+                            "raw_input": line[:50] + "..." if len(line) > 50 else line,
+                            "parse_errors": nav_state.json_parse_errors
+                        }
+                        send_serial_response(error_response)
+                        log_error(f"JSON parse error: {str(e)}", "JSON_PARSE")
     except Exception as e:
-        # Don't send error response for every read attempt to avoid spam
-        pass
+        nav_state.serial_read_errors += 1
+        # Only log every 10th serial read error to avoid spam
+        if nav_state.serial_read_errors % 10 == 0:
+            log_error(f"Serial read error (count: {nav_state.serial_read_errors}): {str(e)}", "SERIAL_READ")
 
 # Optional WiFi server for testing
 def enable_wifi_server():
@@ -429,20 +609,35 @@ def enable_wifi_server():
         return {"status": "error", "message": f"WiFi setup error: {e}"}
 
 def main_loop():
-    """Main control loop"""
+    """Main control loop with enhanced monitoring"""
     log_message("MicroPython Motor Controller started - Serial mode", "INFO")
     log_message(f"WiFi available: {WIFI_AVAILABLE}", "INFO")
+    log_message("System started in EMERGENCY STOP mode for safety", "WARN")
+    log_message("Send reset_estop command to enable movement", "INFO")
+    log_message(f"Heartbeat interval: {nav_state.heartbeat_interval_ms}ms", "INFO")
     
     # Send initial status
     send_serial_response(get_status())
     
     try:
+        loop_count = 0
         while True:
+            loop_count += 1
+            
             # Check for movement timeouts
             check_movement_timeout()
             
             # Process serial commands
             read_serial_input()
+            
+            # Send periodic heartbeat
+            send_heartbeat()
+            
+            # Every 1000 loops (~10 seconds), send diagnostics if in autonomous mode
+            if loop_count % 1000 == 0 and nav_state.autonomous_mode:
+                diagnostics = get_diagnostics()
+                diagnostics["type"] = "periodic_diagnostics"
+                send_serial_response(diagnostics)
             
             # Small delay to prevent excessive CPU usage
             sleep_ms(10)
@@ -451,7 +646,7 @@ def main_loop():
         log_message("Controller stopped by user", "INFO")
         emergency_stop()
     except Exception as e:
-        log_message(f"Main loop error: {e}", "ERROR")
+        log_error(f"Main loop error: {e}", "MAIN_LOOP")
         emergency_stop()
 
 # Run the main loop
