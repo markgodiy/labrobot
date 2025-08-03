@@ -27,6 +27,7 @@ Published Topics:
 
 Services:
 - /emergency_stop (std_srvs/Trigger): Emergency stop
+- /reset_emergency_stop (std_srvs/Trigger): Reset emergency stop
 - /set_autonomous_mode (std_srvs/SetBool): Enable/disable autonomous mode
 """
 
@@ -150,6 +151,12 @@ class AutonomousNavigationNode(Node):
             SetBool,
             '/set_autonomous_mode',
             self.set_autonomous_mode_callback
+        )
+        
+        self.reset_emergency_stop_service = self.create_service(
+            Trigger,
+            '/reset_emergency_stop',
+            self.reset_emergency_stop_callback
         )
         
         # Timers
@@ -511,6 +518,16 @@ class AutonomousNavigationNode(Node):
         except Exception as e:
             response.success = False
             response.message = f"Autonomous mode error: {e}"
+        
+        return response
+    
+    def reset_emergency_stop_callback(self, request, response):
+        """Service callback for resetting emergency stop"""
+        self.emergency_stop_active = False
+        
+        response.success = True
+        response.message = "Emergency stop reset"
+        self.get_logger().info("EMERGENCY STOP RESET")
         
         return response
 

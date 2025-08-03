@@ -44,6 +44,7 @@ install(PROGRAMS
   scripts/serial_nav_control.py
   scripts/test_micropython_controller.py
   scripts/manual_robot_control.py
+  scripts/reset_emergency_stop.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

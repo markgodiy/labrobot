@@ -159,7 +159,7 @@ def generate_launch_description():
     )
     
     safety_message = LogInfo(
-        msg="SAFETY: Emergency stop service available at '/emergency_stop'"
+        msg="SAFETY: Emergency stop '/emergency_stop', reset '/reset_emergency_stop'"
     )
     
     control_message = LogInfo(
