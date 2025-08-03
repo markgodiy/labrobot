@@ -25,8 +25,9 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo, ExecuteProcess
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, TextSubstitution
 from launch_ros.actions import Node
+from launch.substitutions import PythonExpression
 
 def generate_launch_description():
     # Package directory (using the same pattern as working launch file)
@@ -117,8 +118,8 @@ def generate_launch_description():
     serial_bridge_node = ExecuteProcess(
         cmd=['python3', os.path.join(scripts_path, 'serial_motor_bridge.py'),
         '--ros-args',
-        '-p', ['serial_port:=', LaunchConfiguration('serial_port')],
-        '-p', ['baudrate:=', LaunchConfiguration('baudrate')],
+        '-p', [TextSubstitution(text='serial_port:='), LaunchConfiguration('serial_port')],
+        '-p', [TextSubstitution(text='baudrate:='), LaunchConfiguration('baudrate')],
         '-p', 'timeout:=1.0',
         '-p', 'reconnect_interval:=5.0'
         ],
@@ -130,13 +131,13 @@ def generate_launch_description():
     autonomous_nav_node = ExecuteProcess(
         cmd=['python3', os.path.join(scripts_path, 'autonomous_navigation_node.py'),
         '--ros-args',
-        '-p', ['serial_port:=', LaunchConfiguration('serial_port')],  # MicroPython controller port
-        '-p', ['autonomous_enabled:=', LaunchConfiguration('autonomous_enabled')],
-        '-p', ['min_obstacle_distance:=', LaunchConfiguration('min_obstacle_distance')],
-        '-p', ['max_speed:=', LaunchConfiguration('max_speed')],
-        '-p', ['default_speed:=', LaunchConfiguration('default_speed')],
-        '-p', ['rotation_speed:=', LaunchConfiguration('rotation_speed')],
-        '-p', ['scan_angle_range:=', LaunchConfiguration('scan_angle_range')],
+        '-p', [TextSubstitution(text='serial_port:='), LaunchConfiguration('serial_port')],  # MicroPython controller port
+        '-p', [TextSubstitution(text='autonomous_enabled:='), LaunchConfiguration('autonomous_enabled')],
+        '-p', [TextSubstitution(text='min_obstacle_distance:='), LaunchConfiguration('min_obstacle_distance')],
+        '-p', [TextSubstitution(text='max_speed:='), LaunchConfiguration('max_speed')],
+        '-p', [TextSubstitution(text='default_speed:='), LaunchConfiguration('default_speed')],
+        '-p', [TextSubstitution(text='rotation_speed:='), LaunchConfiguration('rotation_speed')],
+        '-p', [TextSubstitution(text='scan_angle_range:='), LaunchConfiguration('scan_angle_range')],
         '-p', 'depth_obstacle_threshold:=1000',
         '-p', 'command_timeout:=2.0'
         ],
