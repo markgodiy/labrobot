@@ -37,6 +37,15 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+# Install Python scripts as executables
+install(PROGRAMS
+  scripts/serial_motor_bridge.py
+  scripts/autonomous_navigation_node.py
+  scripts/serial_nav_control.py
+  scripts/test_micropython_controller.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 # Create empty lib directory to satisfy ROS 2 package structure requirements
 install(CODE "execute_process(COMMAND ${CMAKE_COMMAND} -E make_directory \${CMAKE_INSTALL_PREFIX}/lib/${PROJECT_NAME})")
 

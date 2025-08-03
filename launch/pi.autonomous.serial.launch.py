@@ -114,32 +114,34 @@ def generate_launch_description():
         }.items()
     )
     
-    # Serial motor bridge node (using ExecuteProcess for Python script)
+    # Serial motor bridge node (using ExecuteProcess with proper parameter format)
     serial_bridge_node = ExecuteProcess(
-        cmd=['python3', os.path.join(scripts_path, 'serial_motor_bridge.py'),
-        '--ros-args',
-        '-p', [TextSubstitution(text='serial_port:='), LaunchConfiguration('serial_port')],
-        '-p', [TextSubstitution(text='baudrate:='), LaunchConfiguration('baudrate')],
-        '-p', 'timeout:=1.0',
-        '-p', 'reconnect_interval:=5.0'
+        cmd=[
+            'python3', os.path.join(scripts_path, 'serial_motor_bridge.py'),
+            '--ros-args',
+            '-p', 'serial_port:=/dev/ttyACM0',
+            '-p', 'baudrate:=115200',
+            '-p', 'timeout:=1.0',
+            '-p', 'reconnect_interval:=5.0'
         ],
         name='serial_motor_bridge',
         output='screen'
     )
     
-    # Autonomous navigation node (using ExecuteProcess for Python script)
+    # Autonomous navigation node (using ExecuteProcess with proper parameter format)
     autonomous_nav_node = ExecuteProcess(
-        cmd=['python3', os.path.join(scripts_path, 'autonomous_navigation_node.py'),
-        '--ros-args',
-        '-p', [TextSubstitution(text='serial_port:='), LaunchConfiguration('serial_port')],  # MicroPython controller port
-        '-p', [TextSubstitution(text='autonomous_enabled:='), LaunchConfiguration('autonomous_enabled')],
-        '-p', [TextSubstitution(text='min_obstacle_distance:='), LaunchConfiguration('min_obstacle_distance')],
-        '-p', [TextSubstitution(text='max_speed:='), LaunchConfiguration('max_speed')],
-        '-p', [TextSubstitution(text='default_speed:='), LaunchConfiguration('default_speed')],
-        '-p', [TextSubstitution(text='rotation_speed:='), LaunchConfiguration('rotation_speed')],
-        '-p', [TextSubstitution(text='scan_angle_range:='), LaunchConfiguration('scan_angle_range')],
-        '-p', 'depth_obstacle_threshold:=1000',
-        '-p', 'command_timeout:=2.0'
+        cmd=[
+            'python3', os.path.join(scripts_path, 'autonomous_navigation_node.py'),
+            '--ros-args',
+            '-p', 'serial_port:=/dev/ttyACM0',  # MicroPython controller port
+            '-p', 'autonomous_enabled:=true',
+            '-p', 'min_obstacle_distance:=0.5',
+            '-p', 'max_speed:=70',
+            '-p', 'default_speed:=50',
+            '-p', 'rotation_speed:=40',
+            '-p', 'scan_angle_range:=90',
+            '-p', 'depth_obstacle_threshold:=1000',
+            '-p', 'command_timeout:=2.0'
         ],
         name='autonomous_navigation_node',
         output='screen'
