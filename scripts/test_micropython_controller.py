@@ -107,7 +107,7 @@ class MicroPythonTester:
             return False
         
         # Test status command
-        result = self.send_command({'command': 'status'})
+        result = self.send_command({'cmd': 'status'})
         
         if result['status'] == 'ok':
             print("  ✅ Connection successful")
@@ -124,18 +124,18 @@ class MicroPythonTester:
         print("\n🚨 Testing emergency stop...")
         
         # Activate emergency stop
-        result = self.send_command({'command': 'estop'})
+        result = self.send_command({'cmd': 'estop'})
         if result['status'] == 'ok':
             print("  ✅ Emergency stop activated")
             time.sleep(0.5)
             
             # Check status
-            status = self.send_command({'command': 'status'})
+            status = self.send_command({'cmd': 'status'})
             if status['status'] == 'ok' and status.get('data', {}).get('emergency_stop'):
                 print("  ✅ Emergency stop status confirmed")
                 
                 # Reset emergency stop
-                reset_result = self.send_command({'command': 'reset_estop'})
+                reset_result = self.send_command({'cmd': 'reset_estop'})
                 if reset_result['status'] == 'ok':
                     print("  ✅ Emergency stop reset successful")
                     self.test_results.append(('Emergency Stop', True, 'OK'))
@@ -158,13 +158,13 @@ class MicroPythonTester:
         print("\n🤖 Testing autonomous mode...")
         
         # Enable autonomous mode
-        result = self.send_command({'command': 'autonomous', 'mode': 'on'})
+        result = self.send_command({'cmd': 'autonomous', 'mode': 'on'})
         if result['status'] == 'ok':
             print("  ✅ Autonomous mode enabled")
             time.sleep(0.5)
             
             # Disable autonomous mode
-            result = self.send_command({'command': 'autonomous', 'mode': 'off'})
+            result = self.send_command({'cmd': 'autonomous', 'mode': 'off'})
             if result['status'] == 'ok':
                 print("  ✅ Autonomous mode disabled")
                 self.test_results.append(('Autonomous Mode', True, 'OK'))
@@ -185,8 +185,8 @@ class MicroPythonTester:
         # Test forward movement
         print("  Testing forward movement...")
         result = self.send_command({
-            'command': 'move',
-            'direction': 'forward',
+            'cmd': 'move',
+            'dir': 'forward',
             'speed': 30,
             'duration': 1
         })
@@ -201,8 +201,8 @@ class MicroPythonTester:
         # Test rotation
         print("  Testing rotation...")
         result = self.send_command({
-            'command': 'rotate',
-            'direction': 'left',
+            'cmd': 'rotate',
+            'dir': 'left',
             'speed': 30,
             'duration': 1
         })
@@ -216,7 +216,7 @@ class MicroPythonTester:
         
         # Test stop
         print("  Testing stop command...")
-        result = self.send_command({'command': 'stop'})
+        result = self.send_command({'cmd': 'stop'})
         if result['status'] == 'ok':
             print("    ✅ Stop command accepted")
             self.test_results.append(('Movement Commands', True, 'OK'))
@@ -232,16 +232,16 @@ class MicroPythonTester:
         
         # Test invalid direction
         result = self.send_command({
-            'command': 'move',
-            'direction': 'invalid',
+            'cmd': 'move',
+            'dir': 'invalid',
             'speed': 50
         })
         print(f"  Invalid direction test: {'✅' if result['status'] == 'error' else '❌'}")
         
         # Test extreme speed values
         result = self.send_command({
-            'command': 'move',
-            'direction': 'forward',
+            'cmd': 'move',
+            'dir': 'forward',
             'speed': 150  # Over 100%
         })
         print(f"  High speed handling: {'✅' if result['status'] in ['ok', 'error'] else '❌'}")
@@ -279,8 +279,8 @@ class MicroPythonTester:
         # Final cleanup - ensure everything is stopped
         print("\n🧹 Cleanup...")
         if self.serial_connection and self.serial_connection.is_open:
-            self.send_command({'command': 'stop'})
-            self.send_command({'command': 'reset_estop'})
+            self.send_command({'cmd': 'stop'})
+            self.send_command({'cmd': 'reset_estop'})
             self.disconnect()
         
         # Results summary
@@ -319,8 +319,8 @@ def main():
         print("\n\n⏹️  Test interrupted by user")
         # Cleanup
         if tester.serial_connection and tester.serial_connection.is_open:
-            tester.send_command({'command': 'stop'})
-            tester.send_command({'command': 'reset_estop'})
+            tester.send_command({'cmd': 'stop'})
+            tester.send_command({'cmd': 'reset_estop'})
             tester.disconnect()
         sys.exit(1)
     except Exception as e:
