@@ -19,6 +19,7 @@ Services:
 - /motor/rotate (custom service): Rotate robot  
 - /motor/stop (std_srvs/Trigger): Stop movement
 - /motor/emergency_stop (std_srvs/Trigger): Emergency stop
+- /motor/reset_emergency_stop (std_srvs/Trigger): Reset emergency stop
 - /motor/set_autonomous_mode (std_srvs/SetBool): Set autonomous mode
 
 Topics:
@@ -66,6 +67,7 @@ class SerialMotorBridge(Node):
         # Services
         self.stop_service = self.create_service(Trigger, '/motor/stop', self.handle_stop)
         self.emergency_stop_service = self.create_service(Trigger, '/motor/emergency_stop', self.handle_emergency_stop)
+        self.reset_emergency_stop_service = self.create_service(Trigger, '/motor/reset_emergency_stop', self.handle_reset_emergency_stop)
         self.autonomous_mode_service = self.create_service(SetBool, '/motor/set_autonomous_mode', self.handle_autonomous_mode)
         
         # Twist subscriber for direct movement commands
@@ -303,6 +305,21 @@ class SerialMotorBridge(Node):
             response.success = False
             response.message = "Failed to activate emergency stop"
             self.get_logger().error("Failed to activate emergency stop")
+        
+        return response
+    
+    def handle_reset_emergency_stop(self, request, response):
+        """Handle reset emergency stop service call"""
+        result = self.send_command({"cmd": "reset_estop"})
+        
+        if result and result.get("status") == "ok":
+            response.success = True
+            response.message = result.get("message", "Emergency stop reset")
+            self.get_logger().info("EMERGENCY STOP RESET")
+        else:
+            response.success = False
+            response.message = "Failed to reset emergency stop"
+            self.get_logger().error("Failed to reset emergency stop")
         
         return response
     

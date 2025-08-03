@@ -94,6 +94,7 @@ class AutonomousNavigationNode(Node):
         # Motor bridge service clients
         self.motor_stop_client = self.create_client(Trigger, '/motor/stop')
         self.motor_emergency_stop_client = self.create_client(Trigger, '/motor/emergency_stop')
+        self.motor_reset_emergency_stop_client = self.create_client(Trigger, '/motor/reset_emergency_stop')
         self.motor_autonomous_mode_client = self.create_client(SetBool, '/motor/set_autonomous_mode')
         
         # QoS profiles
@@ -171,6 +172,7 @@ class AutonomousNavigationNode(Node):
         self.get_logger().info("Waiting for motor bridge services...")
         self.motor_stop_client.wait_for_service(timeout_sec=5.0)
         self.motor_emergency_stop_client.wait_for_service(timeout_sec=5.0)
+        self.motor_reset_emergency_stop_client.wait_for_service(timeout_sec=5.0)
         self.motor_autonomous_mode_client.wait_for_service(timeout_sec=5.0)
         
         # Initialize controller
@@ -179,6 +181,20 @@ class AutonomousNavigationNode(Node):
     def initialize_controller(self):
         """Initialize communication with MicroPython controller"""
         try:
+            # First, reset emergency stop in case it was set during startup
+            self.get_logger().info("Resetting emergency stop on startup...")
+            estop_reset_request = Trigger.Request()
+            reset_future = self.motor_reset_emergency_stop_client.call_async(estop_reset_request)
+            rclpy.spin_until_future_complete(self, reset_future, timeout_sec=2.0)
+            
+            if reset_future.result() is not None and reset_future.result().success:
+                self.get_logger().info("Emergency stop reset successfully")
+            else:
+                self.get_logger().warn("Failed to reset emergency stop")
+            
+            # Wait a moment for the reset to take effect
+            time.sleep(0.5)
+            
             # Set autonomous mode via service call
             request = SetBool.Request()
             request.data = self.autonomous_enabled

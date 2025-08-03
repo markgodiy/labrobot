@@ -6,7 +6,7 @@ Serial-based Autonomous Navigation Launch File
 Launches the complete autonomous navigation system using serial communication:
 - Robot model and sensors (LIDAR + OAK-D Lite)
 - Serial motor bridge for MicroPython communication
-- Autonomous navigation node
+- Autonomous navigation node with automatic emergency stop reset
 
 Usage:
   ros2 launch labrobot pi.autonomous.serial.launch.py
@@ -16,10 +16,16 @@ Parameters:
   - baudrate: Serial baudrate (default: 115200)
   - autonomous_enabled: Start with autonomous mode enabled (default: true)
   - min_obstacle_distance: Minimum distance to obstacles in meters (default: 0.5)
-  - max_speed: Maximum motor speed percentage (default: 85)
+  - max_speed: Maximum motor speed percentage (default: 100)
   - default_speed: Default motor speed percentage (default: 75, minimum for effective movement)
   - rotation_speed: Rotation speed percentage (default: 75, minimum for effective turning)
   - scan_angle_range: LIDAR scan angle range in degrees (default: 90)
+
+Features:
+  - Automatic emergency stop reset on startup for immediate operation
+  - Manual emergency stop control via '/emergency_stop' and reset via '/reset_emergency_stop'
+  - Minimum 75% power for all movements to ensure motor effectiveness
+  - LIDAR and depth camera sensor fusion for robust obstacle avoidance
 """
 
 import os
@@ -159,7 +165,7 @@ def generate_launch_description():
     )
     
     safety_message = LogInfo(
-        msg="SAFETY: Emergency stop '/emergency_stop', reset '/reset_emergency_stop'"
+        msg="SAFETY: Emergency stop '/emergency_stop', reset '/reset_emergency_stop' & '/motor/reset_emergency_stop'"
     )
     
     control_message = LogInfo(
@@ -168,6 +174,10 @@ def generate_launch_description():
     
     status_message = LogInfo(
         msg="STATUS: Monitor with 'ros2 topic echo /navigation/state' and '/motor_controller/status'"
+    )
+    
+    auto_reset_message = LogInfo(
+        msg="AUTO-RESET: Emergency stop automatically reset on startup for immediate operation"
     )
     
     return LaunchDescription([
@@ -190,6 +200,7 @@ def generate_launch_description():
         safety_message,
         control_message,
         status_message,
+        auto_reset_message,
         
         # Launch sensor system
         sensor_launch,
