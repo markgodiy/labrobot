@@ -410,11 +410,11 @@ class AutonomousNavigationNode(Node):
             # Path is clear - move forward (reduced threshold for more exploration)
             if min_distance == float('inf') or min_distance > self.min_obstacle_distance:
                 if self.current_action != "forward":
-                    # Adaptive speed based on distance (minimum 75% for motor effectiveness)
+                    # Adaptive speed based on distance (minimum 85% for motor effectiveness)
                     if min_distance == float('inf'):
                         speed_factor = 1.0  # Full speed in open space
                     else:
-                        speed_factor = max(0.75, min(1.0, min_distance / 2.0))  # Never below 75%
+                        speed_factor = max(0.85, min(1.0, min_distance / 2.0))  # Never below 85%
                     linear_speed = (self.default_speed / 100.0) * speed_factor
                     
                     if self.send_movement_command(linear_x=linear_speed):
@@ -445,13 +445,13 @@ class AutonomousNavigationNode(Node):
                     self.get_logger().info(f"Rotating {best_depth_direction} to avoid ground obstacle (distance: {min_distance:.2f}m)")
         
         elif best_lidar_direction == "backward" or best_depth_direction == "backward":
-            # No clear path - back up (ensure minimum 75% speed)
+            # No clear path - back up (ensure minimum 85% speed)
             if self.current_action != "backward":
-                linear_speed = -(self.default_speed / 100.0) * 0.75  # 75% speed backward minimum
+                linear_speed = -(self.default_speed / 100.0) * 0.85  # 85% speed backward minimum
                 
                 if self.send_movement_command(linear_x=linear_speed):
                     self.current_action = "backward"
-                    self.get_logger().info(f"Backing up at 75% power - no clear path (distance: {min_distance:.2f}m)")
+                    self.get_logger().info(f"Backing up at 85% power - no clear path (distance: {min_distance:.2f}m)")
         
         else:
             # Stop and reassess

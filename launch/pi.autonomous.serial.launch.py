@@ -17,14 +17,14 @@ Parameters:
   - autonomous_enabled: Start with autonomous mode enabled (default: true)
   - min_obstacle_distance: Minimum distance to obstacles in meters (default: 0.5)
   - max_speed: Maximum motor speed percentage (default: 100)
-  - default_speed: Default motor speed percentage (default: 75, minimum for effective movement)
-  - rotation_speed: Rotation speed percentage (default: 75, minimum for effective turning)
+  - default_speed: Default motor speed percentage (default: 85, minimum for effective movement)
+  - rotation_speed: Rotation speed percentage (default: 85, minimum for effective turning)
   - scan_angle_range: LIDAR scan angle range in degrees (default: 90)
 
 Features:
   - Automatic emergency stop reset on startup for immediate operation
   - Manual emergency stop control via '/emergency_stop' and reset via '/reset_emergency_stop'
-  - Minimum 75% power for all movements to ensure motor effectiveness
+  - Minimum 85% power for all movements to ensure motor effectiveness
   - LIDAR and depth camera sensor fusion for robust obstacle avoidance
 """
 
@@ -75,13 +75,13 @@ def generate_launch_description():
     
     default_speed_arg = DeclareLaunchArgument(
         'default_speed',
-        default_value='75',
+        default_value='85',
         description='Default motor speed percentage'
     )
     
     rotation_speed_arg = DeclareLaunchArgument(
         'rotation_speed',
-        default_value='75',
+        default_value='85',
         description='Rotation speed percentage'
     )
     
@@ -145,8 +145,8 @@ def generate_launch_description():
             '-p', 'autonomous_enabled:=true',
             '-p', 'min_obstacle_distance:=0.5',
             '-p', 'max_speed:=100',
-            '-p', 'default_speed:=75',
-            '-p', 'rotation_speed:=75',
+            '-p', 'default_speed:=85',
+            '-p', 'rotation_speed:=85',
             '-p', 'scan_angle_range:=90',
             '-p', 'depth_obstacle_threshold:=1000',
             '-p', 'command_timeout:=2.0'
