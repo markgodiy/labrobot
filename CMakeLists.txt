@@ -33,26 +33,8 @@ if(BUILD_TESTING)
 endif()
 
 install(
-  DIRECTORY config description launch worlds upython
+  DIRECTORY config description launch worlds scripts upython
   DESTINATION share/${PROJECT_NAME}
-)
-
-# Install Python scripts as executables
-install(PROGRAMS
-  scripts/autonomous_navigation_node.py
-  scripts/test_micropython_controller.py
-  scripts/serial_motor_bridge.py
-  scripts/serial_nav_control.py
-  scripts/basic_odom_publisher.py
-  scripts/labrobot_square.py
-  scripts/test_movement.py
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-# Install scripts directory for reference
-install(DIRECTORY scripts/
-  DESTINATION share/${PROJECT_NAME}/scripts
-  USE_SOURCE_PERMISSIONS
 )
 
 # Ensure all .xacro files are installed
