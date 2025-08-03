@@ -15,19 +15,16 @@ def generate_launch_description():
     # Process the URDF file
     pkg_path = os.path.join(get_package_share_directory('labrobot'))
     xacro_file = os.path.join(pkg_path, 'description', 'robot.urdf.xacro')
-    robot_description_config = xacro.process_file(xacro_file)
-    robot_description = robot_description_config.toxml()
-
+    robot_description_config = xacro.process_file(xacro_file, mappings={'use_sim_time': 'false'})
+    
     # Create a robot_state_publisher node
     node_robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         output='screen',
         parameters=[{
-            'robot_description': robot_description,
-            'use_sim_time': use_sim_time,
-            'publish_frequency': 30.0,  # Ensure regular publishing
-            'ignore_timestamp': False
+            'robot_description': robot_description_config.toxml(),
+            'use_sim_time': use_sim_time
         }]
     )
 
@@ -38,10 +35,8 @@ def generate_launch_description():
         name='joint_state_publisher',
         output='screen',
         parameters=[{
-            'robot_description': robot_description,
-            'use_sim_time': use_sim_time,
-            'rate': 30.0,  # Publishing rate in Hz
-            'source_list': ['left_wheel_to_base_link', 'right_wheel_to_base_link']
+            'robot_description': robot_description_config.toxml(),
+            'use_sim_time': use_sim_time
         }]
     )
 
