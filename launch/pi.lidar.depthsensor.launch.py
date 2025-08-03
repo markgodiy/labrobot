@@ -190,6 +190,15 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
+    # IMU data republisher for easier RViz access and standard topic naming
+    imu_republisher = Node(
+        package='topic_tools',
+        executable='relay',
+        name='imu_republisher',
+        arguments=['/oak/imu/data', '/imu/data'],
+        parameters=[{'use_sim_time': use_sim_time}]
+    )
+
     # Launch!
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -214,5 +223,6 @@ def generate_launch_description():
         point_cloud_container,  # RGB overlay point cloud processing
         rgb_republisher,  # Easier RViz access to RGB
         depth_republisher,  # Easier RViz access to depth
+        imu_republisher,  # IMU data for motion tracking
         # Note: Full sensor suite for advanced navigation and perception
     ])
