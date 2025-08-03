@@ -1,54 +1,117 @@
 #!/usr/bin/env python3
 """
-MicroPython Controller Test Script
-=================================
+MicroPython Controller Test Script (Serial Communication)
+========================================================
 
-This script tests communication with the MicroPython motor controller
+This script tests serial communication with the MicroPython motor controller
 and verifies all basic functions are working correctly.
 
 Usage:
-  python3 test_micropython_controller.py [IP_ADDRESS]
+  python3 test_micropython_controller.py [SERIAL_PORT]
   
 Example:
-  python3 test_micropython_controller.py 192.168.25.72
+  python3 test_micropython_controller.py /dev/ttyACM0
 """
 
-import requests
+import serial
 import json
 import time
 import sys
 import argparse
+import threading
 
 class MicroPythonTester:
-    def __init__(self, ip='192.168.25.72', port=8080):
-        self.ip = ip
-        self.port = port
-        self.base_url = f"http://{ip}:{port}"
+    def __init__(self, serial_port='/dev/ttyACM0', baud_rate=115200):
+        self.serial_port = serial_port
+        self.baud_rate = baud_rate
+        self.serial_connection = None
         self.test_results = []
+        self.response_buffer = ""
+        self.response_lock = threading.Lock()
+        self.latest_response = None
     
-    def send_command(self, endpoint, params=None, timeout=2.0):
-        """Send command to MicroPython controller"""
+    def connect(self):
+        """Connect to MicroPython controller via serial"""
         try:
-            url = f"{self.base_url}{endpoint}"
-            if params:
-                url += "?" + "&".join([f"{k}={v}" for k, v in params.items()])
+            self.serial_connection = serial.Serial(
+                port=self.serial_port,
+                baudrate=self.baud_rate,
+                timeout=1.0,
+                write_timeout=1.0
+            )
+            # Wait for connection to stabilize
+            time.sleep(2)
             
-            response = requests.get(url, timeout=timeout)
-            if response.status_code == 200:
-                return response.json()
-            else:
-                return {'status': 'error', 'message': f'HTTP {response.status_code}'}
-        except requests.exceptions.RequestException as e:
+            # Clear any existing data
+            self.serial_connection.reset_input_buffer()
+            self.serial_connection.reset_output_buffer()
+            return True
+        except Exception as e:
+            print(f"Failed to connect to {self.serial_port}: {e}")
+            return False
+    
+    def disconnect(self):
+        """Disconnect from serial port"""
+        if self.serial_connection and self.serial_connection.is_open:
+            self.serial_connection.close()
+    
+    def send_command(self, command_dict, timeout=3.0):
+        """Send JSON command to MicroPython controller and wait for response"""
+        if not self.serial_connection or not self.serial_connection.is_open:
+            return {'status': 'error', 'message': 'Serial connection not open'}
+        
+        try:
+            # Send command as JSON
+            command_json = json.dumps(command_dict) + '\n'
+            self.serial_connection.write(command_json.encode('utf-8'))
+            self.serial_connection.flush()
+            
+            # Wait for response
+            start_time = time.time()
+            response_data = ""
+            
+            while (time.time() - start_time) < timeout:
+                if self.serial_connection.in_waiting > 0:
+                    data = self.serial_connection.read(self.serial_connection.in_waiting).decode('utf-8', errors='ignore')
+                    response_data += data
+                    
+                    # Look for complete JSON response
+                    lines = response_data.split('\n')
+                    for line in lines[:-1]:  # Process all complete lines
+                        line = line.strip()
+                        if line and line.startswith('{') and line.endswith('}'):
+                            try:
+                                response = json.loads(line)
+                                return response
+                            except json.JSONDecodeError:
+                                continue
+                    
+                    # Keep the last incomplete line for next iteration
+                    response_data = lines[-1]
+                else:
+                    time.sleep(0.1)
+            
+            return {'status': 'error', 'message': 'Response timeout'}
+            
+        except Exception as e:
             return {'status': 'error', 'message': str(e)}
+    
     
     def test_connection(self):
         """Test basic connection to controller"""
         print("🔌 Testing connection...")
-        result = self.send_command('/status')
+        
+        if not self.connect():
+            print("  ❌ Failed to connect to serial port")
+            self.test_results.append(('Connection', False, 'Serial connection failed'))
+            return False
+        
+        # Test status command
+        result = self.send_command({'command': 'status'})
         
         if result['status'] == 'ok':
             print("  ✅ Connection successful")
-            print(f"  📊 Status: {json.dumps(result['data'], indent=2)}")
+            print(f"  📊 Status: {json.dumps(result.get('data', {}), indent=2)}")
             self.test_results.append(('Connection', True, 'OK'))
             return True
         else:
@@ -61,18 +124,18 @@ class MicroPythonTester:
         print("\n🚨 Testing emergency stop...")
         
         # Activate emergency stop
-        result = self.send_command('/estop')
+        result = self.send_command({'command': 'estop'})
         if result['status'] == 'ok':
             print("  ✅ Emergency stop activated")
             time.sleep(0.5)
             
             # Check status
-            status = self.send_command('/status')
-            if status['status'] == 'ok' and status['data'].get('emergency_stop'):
+            status = self.send_command({'command': 'status'})
+            if status['status'] == 'ok' and status.get('data', {}).get('emergency_stop'):
                 print("  ✅ Emergency stop status confirmed")
                 
                 # Reset emergency stop
-                reset_result = self.send_command('/reset_estop')
+                reset_result = self.send_command({'command': 'reset_estop'})
                 if reset_result['status'] == 'ok':
                     print("  ✅ Emergency stop reset successful")
                     self.test_results.append(('Emergency Stop', True, 'OK'))
@@ -95,13 +158,13 @@ class MicroPythonTester:
         print("\n🤖 Testing autonomous mode...")
         
         # Enable autonomous mode
-        result = self.send_command('/autonomous', {'mode': 'on'})
+        result = self.send_command({'command': 'autonomous', 'mode': 'on'})
         if result['status'] == 'ok':
             print("  ✅ Autonomous mode enabled")
             time.sleep(0.5)
             
             # Disable autonomous mode
-            result = self.send_command('/autonomous', {'mode': 'off'})
+            result = self.send_command({'command': 'autonomous', 'mode': 'off'})
             if result['status'] == 'ok':
                 print("  ✅ Autonomous mode disabled")
                 self.test_results.append(('Autonomous Mode', True, 'OK'))
@@ -121,7 +184,12 @@ class MicroPythonTester:
         
         # Test forward movement
         print("  Testing forward movement...")
-        result = self.send_command('/move', {'dir': 'forward', 'speed': 30, 'duration': 1})
+        result = self.send_command({
+            'command': 'move',
+            'direction': 'forward',
+            'speed': 30,
+            'duration': 1
+        })
         if result['status'] == 'ok':
             print("    ✅ Forward command accepted")
             time.sleep(1.5)  # Wait for movement to complete
@@ -132,7 +200,12 @@ class MicroPythonTester:
         
         # Test rotation
         print("  Testing rotation...")
-        result = self.send_command('/rotate', {'dir': 'left', 'speed': 30, 'duration': 1})
+        result = self.send_command({
+            'command': 'rotate',
+            'direction': 'left',
+            'speed': 30,
+            'duration': 1
+        })
         if result['status'] == 'ok':
             print("    ✅ Rotation command accepted")
             time.sleep(1.5)  # Wait for rotation to complete
@@ -143,7 +216,7 @@ class MicroPythonTester:
         
         # Test stop
         print("  Testing stop command...")
-        result = self.send_command('/stop')
+        result = self.send_command({'command': 'stop'})
         if result['status'] == 'ok':
             print("    ✅ Stop command accepted")
             self.test_results.append(('Movement Commands', True, 'OK'))
@@ -158,22 +231,31 @@ class MicroPythonTester:
         print("\n🔧 Testing parameter validation...")
         
         # Test invalid direction
-        result = self.send_command('/move', {'dir': 'invalid', 'speed': 50})
+        result = self.send_command({
+            'command': 'move',
+            'direction': 'invalid',
+            'speed': 50
+        })
         print(f"  Invalid direction test: {'✅' if result['status'] == 'error' else '❌'}")
         
         # Test extreme speed values
-        result = self.send_command('/move', {'dir': 'forward', 'speed': 150})  # Over 100%
+        result = self.send_command({
+            'command': 'move',
+            'direction': 'forward',
+            'speed': 150  # Over 100%
+        })
         print(f"  High speed handling: {'✅' if result['status'] in ['ok', 'error'] else '❌'}")
         
         self.test_results.append(('Parameter Validation', True, 'OK'))
         return True
     
+    
     def run_all_tests(self):
         """Run complete test suite"""
         print("=" * 60)
-        print("🧪 MICROPYTHON CONTROLLER TEST SUITE")
+        print("🧪 MICROPYTHON CONTROLLER TEST SUITE (Serial)")
         print("=" * 60)
-        print(f"Target: {self.base_url}")
+        print(f"Target: {self.serial_port} @ {self.baud_rate} baud")
         print()
         
         # Run tests in sequence
@@ -196,8 +278,10 @@ class MicroPythonTester:
                 
         # Final cleanup - ensure everything is stopped
         print("\n🧹 Cleanup...")
-        self.send_command('/stop')
-        self.send_command('/reset_estop')
+        if self.serial_connection and self.serial_connection.is_open:
+            self.send_command({'command': 'stop'})
+            self.send_command({'command': 'reset_estop'})
+            self.disconnect()
         
         # Results summary
         print("\n" + "=" * 60)
@@ -218,15 +302,15 @@ class MicroPythonTester:
         return all_passed
 
 def main():
-    parser = argparse.ArgumentParser(description='Test MicroPython Motor Controller')
-    parser.add_argument('ip', nargs='?', default='192.168.25.72', 
-                       help='IP address of MicroPython controller (default: 192.168.25.72)')
-    parser.add_argument('--port', type=int, default=8080,
-                       help='Port of MicroPython controller (default: 8080)')
+    parser = argparse.ArgumentParser(description='Test MicroPython Motor Controller (Serial)')
+    parser.add_argument('serial_port', nargs='?', default='/dev/ttyACM0', 
+                       help='Serial port of MicroPython controller (default: /dev/ttyACM0)')
+    parser.add_argument('--baud', type=int, default=115200,
+                       help='Baud rate for serial communication (default: 115200)')
     
     args = parser.parse_args()
     
-    tester = MicroPythonTester(args.ip, args.port)
+    tester = MicroPythonTester(args.serial_port, args.baud)
     
     try:
         success = tester.run_all_tests()
@@ -234,11 +318,15 @@ def main():
     except KeyboardInterrupt:
         print("\n\n⏹️  Test interrupted by user")
         # Cleanup
-        tester.send_command('/stop')
-        tester.send_command('/reset_estop')
+        if tester.serial_connection and tester.serial_connection.is_open:
+            tester.send_command({'command': 'stop'})
+            tester.send_command({'command': 'reset_estop'})
+            tester.disconnect()
         sys.exit(1)
     except Exception as e:
         print(f"\n\n💥 Test suite failed with error: {e}")
+        if tester.serial_connection and tester.serial_connection.is_open:
+            tester.disconnect()
         sys.exit(1)
 
 if __name__ == '__main__':

@@ -33,12 +33,10 @@ import json
 import threading
 import time
 from threading import Lock
+# Standard ROS 2 service and message imports
 from std_srvs.srv import Trigger, SetBool
 from std_msgs.msg import String
 from geometry_msgs.msg import Twist
-
-# Custom service messages for motor control
-from example_interfaces.srv import AddTwoInts  # We'll use this as a template
 
 class SerialMotorBridge(Node):
     def __init__(self):

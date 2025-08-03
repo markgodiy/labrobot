@@ -1,26 +1,37 @@
 # ROS 2 Autonomous Navigation System
-## MicroPython Motor Controller Integration
 
-This system enables autonomous navigation for a robot using LIDAR and depth camera data, with a MicroPython-based motor controller.
+## Serial MicroPython Motor Controller Integration
+
+This system enables autonomous navigation for a robot using LIDAR and depth camera data, with a MicroPython-based motor controller communicating via USB serial.
 
 ## Architecture Overview
 
-```
-┌─────────────────┐    HTTP Commands    ┌──────────────────────┐
-│   ROS 2 Pi      │ ────────────────── │ MicroPython          │
-│                 │                     │ Motor Controller     │
-│ ┌─────────────┐ │                     │ (Pico W)             │
-│ │ LIDAR       │ │                     │                      │
-│ │ OAK-D Lite  │ │    Navigation       │ ┌──────────────────┐ │
-│ │ IMU         │ │    Decisions        │ │ Motor A (Left)   │ │
-│ └─────────────┘ │                     │ │ Motor B (Right)  │ │
-│                 │                     │ │ Safety Systems   │ │
-│ ┌─────────────┐ │                     │ └──────────────────┘ │
-│ │ Autonomous  │ │                     └──────────────────────┘
-│ │ Navigation  │ │
-│ │ Node        │ │
-│ └─────────────┘ │
-└─────────────────┘
+```mermaid
+graph LR
+    subgraph "ROS 2 Pi System"
+        L[LIDAR Sensor]
+        D[OAK-D Lite Camera]
+        I[IMU Sensor]
+        AN[Autonomous Navigation Node]
+        SB[Serial Motor Bridge]
+        L --> AN
+        D --> AN
+        I --> AN
+        AN --> SB
+    end
+    
+    subgraph "MicroPython Controller (Pico W)"
+        SC[Serial Communication]
+        ML[Motor Left]
+        MR[Motor Right]
+        SS[Safety Systems]
+        SC --> ML
+        SC --> MR
+        SC --> SS
+    end
+    
+    SB -.->|USB Serial JSON Commands| SC
+    SC -.->|Status & Feedback| SB
 ```
 
 ## Hardware Requirements
@@ -32,16 +43,18 @@ This system enables autonomous navigation for a robot using LIDAR and depth came
 - IMU (integrated with OAK-D Lite)
 
 ### MicroPython Motor Controller
+
 - Raspberry Pi Pico W
 - L298N or compatible motor driver
 - 2x DC motors (differential drive)
-- WiFi connectivity
+- USB serial connectivity (via USB cable to Pi)
 
 ## Software Components
 
-### 1. MicroPython Controller (`ros2_autonomous_main.py`)
+### 1. MicroPython Controller (`ros2_serial_main.py`)
+
 - **Purpose**: Motor control and safety systems
-- **Communication**: HTTP server on port 8080
+- **Communication**: USB serial JSON commands on `/dev/ttyACM0`
 - **Features**:
   - Smooth speed ramping to prevent tipping
   - Emergency stop capabilities
@@ -49,7 +62,21 @@ This system enables autonomous navigation for a robot using LIDAR and depth came
   - Autonomous mode toggle
   - Real-time status reporting
 
-### 2. ROS 2 Navigation Node (`autonomous_navigation_node.py`)
+### 2. Serial Motor Bridge (`serial_motor_bridge.py`)
+
+- **Purpose**: Bridge between ROS 2 and MicroPython controller
+- **Communication**: USB serial at 115200 baud
+- **Services**:
+  - `/motor/move` - Move robot commands
+  - `/motor/rotate` - Rotate robot commands  
+  - `/motor/stop` - Stop movement
+  - `/motor/emergency_stop` - Emergency stop
+- **Topics**:
+  - `/motor_controller/status` - Controller status
+  - `/cmd_vel` - Velocity commands
+
+### 3. ROS 2 Navigation Node (`autonomous_navigation_node.py`)
+
 - **Purpose**: Process sensor data and make navigation decisions
 - **Subscriptions**:
   - `/scan` - LIDAR data
@@ -60,13 +87,15 @@ This system enables autonomous navigation for a robot using LIDAR and depth came
   - `/emergency_stop` - Emergency stop trigger
   - `/set_autonomous_mode` - Enable/disable autonomous navigation
 
-### 3. Launch System (`pi.autonomous.launch.py`)
-- **Purpose**: Start complete autonomous navigation system
-- **Includes**: Full sensor suite + navigation node
-- **Parameters**: Configurable navigation behavior
+### 4. Launch System (`pi.autonomous.serial.launch.py`)
 
-### 4. Control Utility (`nav_control.py`)
-- **Purpose**: Easy control interface
+- **Purpose**: Start complete autonomous navigation system
+- **Includes**: Full sensor suite + serial bridge + navigation node
+- **Parameters**: Configurable navigation behavior and serial communication
+
+### 5. Control Utility (`serial_nav_control.py`)
+
+- **Purpose**: Easy control interface for serial communication
 - **Features**: Command-line control, status monitoring, manual override
 
 ## Installation & Setup
@@ -75,7 +104,10 @@ This system enables autonomous navigation for a robot using LIDAR and depth came
 
 ```bash
 # Connect to MicroPython device
-mpremote a0 fs cp src/labrobot/upython/ros2_autonomous_main.py :main.py
+mpremote a0 fs cp src/labrobot/upython/ros2_serial_main.py :main.py
+
+# Also copy wifi config if needed
+mpremote a0 fs cp src/labrobot/upython/wifi_config.py :wifi_config.py
 
 # Verify deployment
 mpremote a0 ls
@@ -93,7 +125,8 @@ source install/setup.bash
 
 ```bash
 chmod +x src/labrobot/scripts/autonomous_navigation_node.py
-chmod +x src/labrobot/scripts/nav_control.py
+chmod +x src/labrobot/scripts/serial_motor_bridge.py
+chmod +x src/labrobot/scripts/serial_nav_control.py
 ```
 
 ## Usage
@@ -101,12 +134,13 @@ chmod +x src/labrobot/scripts/nav_control.py
 ### Start Complete Autonomous System
 
 ```bash
-# Launch full autonomous navigation
-ros2 launch labrobot pi.autonomous.launch.py
+# Launch full autonomous navigation (serial communication)
+ros2 launch labrobot pi.autonomous.serial.launch.py
 
 # With custom parameters
-ros2 launch labrobot pi.autonomous.launch.py \
-  micropython_ip:=192.168.25.72 \
+ros2 launch labrobot pi.autonomous.serial.launch.py \
+  serial_port:=/dev/ttyACM0 \
+  baudrate:=115200 \
   autonomous_enabled:=true \
   max_speed:=60 \
   min_obstacle_distance:=0.8
@@ -116,21 +150,21 @@ ros2 launch labrobot pi.autonomous.launch.py \
 
 ```bash
 # Emergency stop
-python3 src/labrobot/scripts/nav_control.py --emergency-stop
+python3 src/labrobot/scripts/serial_nav_control.py --emergency-stop
 
 # Enable autonomous mode
-python3 src/labrobot/scripts/nav_control.py --autonomous on
+python3 src/labrobot/scripts/serial_nav_control.py --autonomous on
 
 # Disable autonomous mode  
-python3 src/labrobot/scripts/nav_control.py --autonomous off
+python3 src/labrobot/scripts/serial_nav_control.py --autonomous off
 
 # Monitor status
-python3 src/labrobot/scripts/nav_control.py --monitor
+python3 src/labrobot/scripts/serial_nav_control.py --monitor
 
 # Manual control (when autonomous is off)
-python3 src/labrobot/scripts/nav_control.py --move forward --speed 50
-python3 src/labrobot/scripts/nav_control.py --rotate left --speed 40
-python3 src/labrobot/scripts/nav_control.py --stop
+python3 src/labrobot/scripts/serial_nav_control.py --move forward --speed 50
+python3 src/labrobot/scripts/serial_nav_control.py --rotate left --speed 40
+python3 src/labrobot/scripts/serial_nav_control.py --stop
 ```
 
 ### ROS 2 Service Calls
@@ -148,15 +182,20 @@ ros2 topic echo /motor_controller/status
 ros2 topic echo /navigation/state
 ```
 
-### Direct MicroPython Communication
+### Direct Serial Communication
 
 ```bash
-# Test controller directly
-curl "http://192.168.25.72:8080/status"
-curl "http://192.168.25.72:8080/move?dir=forward&speed=50&duration=2"
-curl "http://192.168.25.72:8080/rotate?dir=left&speed=40&duration=1"
-curl "http://192.168.25.72:8080/stop"
-curl "http://192.168.25.72:8080/estop"
+# Test controller directly via serial (if needed for debugging)
+python3 -c "
+import serial
+import json
+ser = serial.Serial('/dev/ttyACM0', 115200, timeout=1)
+# Send status request
+ser.write(json.dumps({'command': 'status'}).encode() + b'\n')
+response = ser.readline().decode()
+print('Response:', response)
+ser.close()
+"
 ```
 
 ## Navigation Algorithm
@@ -172,17 +211,18 @@ curl "http://192.168.25.72:8080/estop"
    - **No clear path**: Back up and reassess
 
 ### Safety Features
+
 - **Command Timeout**: Stop if no command received within 2 seconds
 - **Emergency Stop**: Immediate motor shutdown with override
 - **Speed Ramping**: Smooth acceleration/deceleration
-- **Dual Communication**: ROS 2 + direct HTTP fallback
+- **Serial Communication**: Reliable USB connection with reconnection handling
 
 ## Configuration Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `micropython_ip` | 192.168.25.72 | Controller IP address |
-| `micropython_port` | 8080 | Controller port |
+| `serial_port` | /dev/ttyACM0 | USB serial port for controller |
+| `baudrate` | 115200 | Serial communication baudrate |
 | `autonomous_enabled` | false | Start with autonomous mode |
 | `min_obstacle_distance` | 0.5 | Obstacle detection distance (m) |
 | `max_speed` | 70 | Maximum motor speed (%) |
@@ -193,35 +233,161 @@ curl "http://192.168.25.72:8080/estop"
 
 ## Troubleshooting
 
-### Connection Issues
-```bash
-# Check MicroPython controller
-ping 192.168.25.72
-curl "http://192.168.25.72:8080/status"
+### Serial Controller Not Connected
 
-# Check ROS 2 topics
-ros2 topic list
-ros2 topic echo /scan --max-count 1
+If you see `Motor Controller: ❓ NO STATUS RECEIVED` and `Controller Connected: ❌ NO`:
+
+```bash
+# 1. Check if MicroPython device is connected
+ls -la /dev/ttyACM*
+# Should show: /dev/ttyACM0 (or similar)
+
+# 2. Check USB device detection
+dmesg | tail -20
+# Look for: "cdc_acm" or "USB" device messages
+
+# 3. Test direct serial communication
+python3 src/labrobot/scripts/test_micropython_controller.py
+
+# 4. Check if MicroPython is running the correct code
+mpremote a0 ls
+# Should show: main.py
+
+# 5. Check MicroPython serial output
+mpremote a0 repl
+# Press Ctrl+C to interrupt, then check for errors
+# Press Ctrl+D to soft reset and see startup messages
+
+# 6. Verify serial bridge is running
+ros2 topic list | grep motor
+# Should show: /motor_controller/status
+
+# 7. Check serial bridge logs
+ros2 topic echo /motor_controller/status --once
+```
+
+### Common Solutions for "NO STATUS RECEIVED"
+
+**Step 1: Verify Hardware Connection**
+```bash
+# Check if Pico W is detected
+lsusb | grep -i "Raspberry Pi"
+# OR check for any USB serial device
+ls -la /dev/ttyACM* /dev/ttyUSB*
+```
+
+**Step 2: Deploy/Restart MicroPython Code**
+```bash
+# Re-deploy the serial main script
+mpremote a0 fs cp src/labrobot/upython/ros2_serial_main.py :main.py
+
+# Restart MicroPython (this will run main.py)
+mpremote a0 reset
+```
+
+**Step 3: Test Serial Communication**
+```bash
+# Test with the dedicated test script
+python3 src/labrobot/scripts/test_micropython_controller.py
+
+# If that works, test the nav control script
+python3 src/labrobot/scripts/serial_nav_control.py --status
+```
+
+**Step 4: Check Serial Bridge Service**
+```bash
+# Make sure the serial bridge is running
+ros2 node list | grep serial_motor_bridge
+# If NO OUTPUT: The serial bridge node is not running!
+
+# Check if it's receiving/sending data (only if node is running)
+ros2 topic echo /motor_controller/status --max-count 5
+
+# If serial bridge is missing, check launch logs:
+# Look at the terminal where you ran the launch command for errors
+```
+
+**Step 4a: If Serial Bridge Node is Missing**
+```bash
+# Check if the launch file started all nodes
+ros2 node list
+# Expected nodes: autonomous_navigation_node, serial_motor_bridge, and sensor nodes
+# If you see serial_navigation_controller instead of serial_motor_bridge,
+# this indicates an old/different version of the scripts
+
+# Try running the serial bridge manually to see errors:
+python3 src/labrobot/scripts/serial_motor_bridge.py
+# Common errors:
+# - ModuleNotFoundError: No module named 'example_interfaces'
+# - Permission denied
+# - Serial port access issues
+
+# Check file permissions and existence
+ls -la src/labrobot/scripts/serial_motor_bridge.py
+# Should be executable (x permission)
+
+# If the file doesn't exist in install directory:
+ls -la install/labrobot/share/labrobot/scripts/serial_motor_bridge.py
+```
+
+**Step 4b: Fix ModuleNotFoundError for 'example_interfaces'**
+```bash
+# Install missing ROS 2 package
+sudo apt update
+sudo apt install ros-jazzy-example-interfaces
+
+# Alternative: Install all common ROS 2 interface packages
+sudo apt install ros-jazzy-common-interfaces
+
+# Verify installation
+ros2 interface list | grep example_interfaces
+# Should show various example_interfaces services
+
+# Try running the serial bridge again
+python3 src/labrobot/scripts/serial_motor_bridge.py
+```
+
+**Step 4c: Copy Scripts to Install Directory**
+```bash
+# If scripts are missing from install directory, copy them:
+mkdir -p install/labrobot/share/labrobot/scripts
+cp src/labrobot/scripts/*.py install/labrobot/share/labrobot/scripts/
+
+# Make sure they're executable
+chmod +x install/labrobot/share/labrobot/scripts/*.py
+
+# Restart the launch file
+# Press Ctrl+C to stop current launch, then:
+ros2 launch labrobot pi.autonomous.serial.launch.py
+```
+
+**Step 5: Verify Launch File**
+```bash
+# Stop current launch and restart with verbose output
+ros2 launch labrobot pi.autonomous.serial.launch.py
+# Check for any error messages about serial communication
 ```
 
 ### Motor Issues
+
 ```bash
-# Test manual control
-python3 src/labrobot/scripts/nav_control.py --move forward --speed 30
-python3 src/labrobot/scripts/nav_control.py --stop
+# Test manual control via serial
+python3 src/labrobot/scripts/serial_nav_control.py --move forward --speed 30
+python3 src/labrobot/scripts/serial_nav_control.py --stop
 
 # Check emergency stop status
-python3 src/labrobot/scripts/nav_control.py --status
+python3 src/labrobot/scripts/serial_nav_control.py --status
 ```
 
 ### Sensor Issues
+
 ```bash
 # Verify sensor data
 ros2 topic echo /scan --max-count 1
 ros2 topic echo /oak/depth/image_raw --max-count 1
 
 # Check launch system
-ros2 launch labrobot pi.full.launch.py
+ros2 launch labrobot pi.basic.sensors.launch.py
 ```
 
 ## Development Notes
@@ -256,4 +422,4 @@ The system provides comprehensive status information:
 - **Emergency stop state**
 - **Command timing and safety**
 
-Use `nav_control.py --monitor` for real-time status display.
+Use `serial_nav_control.py --monitor` for real-time status display.
