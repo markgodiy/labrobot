@@ -99,88 +99,104 @@ class MicroPythonTester:
     
     def test_connection(self):
         """Test basic connection to controller"""
-        print("🔌 Testing connection...")
+        print("Testing connection...")
         
         if not self.connect():
-            print("  ❌ Failed to connect to serial port")
+            print("  FAIL: Failed to connect to serial port")
             self.test_results.append(('Connection', False, 'Serial connection failed'))
             return False
         
         # Test status command
         result = self.send_command({'cmd': 'status'})
         
-        if result['status'] == 'ok':
-            print("  ✅ Connection successful")
-            print(f"  📊 Status: {json.dumps(result.get('data', {}), indent=2)}")
+        if result and (result.get('status') == 'ok' or result.get('type') == 'status'):
+            print("  PASS: Connection successful")
+            if result.get('type') == 'status':
+                print(f"  Status: {json.dumps(result, indent=2)}")
+            else:
+                print(f"  Status: {json.dumps(result.get('data', {}), indent=2)}")
             self.test_results.append(('Connection', True, 'OK'))
             return True
         else:
-            print(f"  ❌ Connection failed: {result['message']}")
-            self.test_results.append(('Connection', False, result['message']))
+            message = result.get('message', 'No response') if result else 'No response'
+            print(f"  FAIL: Connection failed: {message}")
+            self.test_results.append(('Connection', False, message))
             return False
     
     def test_emergency_stop(self):
         """Test emergency stop function"""
-        print("\n🚨 Testing emergency stop...")
+        print("\nTesting emergency stop...")
+        
+        # First, reset any existing emergency stop
+        reset_result = self.send_command({'cmd': 'reset_estop'})
+        time.sleep(0.5)
         
         # Activate emergency stop
         result = self.send_command({'cmd': 'estop'})
-        if result['status'] == 'ok':
-            print("  ✅ Emergency stop activated")
+        if result and result.get('status') == 'ok':
+            print("  PASS: Emergency stop activated")
             time.sleep(0.5)
             
             # Check status
             status = self.send_command({'cmd': 'status'})
-            if status['status'] == 'ok' and status.get('data', {}).get('emergency_stop'):
-                print("  ✅ Emergency stop status confirmed")
+            if status and (status.get('emergency_stop') or status.get('data', {}).get('emergency_stop')):
+                print("  PASS: Emergency stop status confirmed")
                 
                 # Reset emergency stop
                 reset_result = self.send_command({'cmd': 'reset_estop'})
-                if reset_result['status'] == 'ok':
-                    print("  ✅ Emergency stop reset successful")
+                if reset_result and reset_result.get('status') == 'ok':
+                    print("  PASS: Emergency stop reset successful")
                     self.test_results.append(('Emergency Stop', True, 'OK'))
                     return True
                 else:
-                    print(f"  ❌ Emergency stop reset failed: {reset_result['message']}")
+                    message = reset_result.get('message', 'No response') if reset_result else 'No response'
+                    print(f"  FAIL: Emergency stop reset failed: {message}")
                     self.test_results.append(('Emergency Stop', False, 'Reset failed'))
                     return False
             else:
-                print("  ❌ Emergency stop status not confirmed")
+                print("  FAIL: Emergency stop status not confirmed")
                 self.test_results.append(('Emergency Stop', False, 'Status not confirmed'))
                 return False
         else:
-            print(f"  ❌ Emergency stop failed: {result['message']}")
-            self.test_results.append(('Emergency Stop', False, result['message']))
+            message = result.get('message', 'No response') if result else 'No response'
+            print(f"  FAIL: Emergency stop failed: {message}")
+            self.test_results.append(('Emergency Stop', False, message))
             return False
     
     def test_autonomous_mode(self):
         """Test autonomous mode toggle"""
-        print("\n🤖 Testing autonomous mode...")
+        print("\nTesting autonomous mode...")
         
         # Enable autonomous mode
         result = self.send_command({'cmd': 'autonomous', 'mode': 'on'})
-        if result['status'] == 'ok':
-            print("  ✅ Autonomous mode enabled")
+        if result and result.get('status') == 'ok':
+            print("  PASS: Autonomous mode enabled")
             time.sleep(0.5)
             
             # Disable autonomous mode
             result = self.send_command({'cmd': 'autonomous', 'mode': 'off'})
-            if result['status'] == 'ok':
-                print("  ✅ Autonomous mode disabled")
+            if result and result.get('status') == 'ok':
+                print("  PASS: Autonomous mode disabled")
                 self.test_results.append(('Autonomous Mode', True, 'OK'))
                 return True
             else:
-                print(f"  ❌ Autonomous mode disable failed: {result['message']}")
+                message = result.get('message', 'No response') if result else 'No response'
+                print(f"  FAIL: Autonomous mode disable failed: {message}")
                 self.test_results.append(('Autonomous Mode', False, 'Disable failed'))
                 return False
         else:
-            print(f"  ❌ Autonomous mode enable failed: {result['message']}")
-            self.test_results.append(('Autonomous Mode', False, result['message']))
+            message = result.get('message', 'No response') if result else 'No response'
+            print(f"  FAIL: Autonomous mode enable failed: {message}")
+            self.test_results.append(('Autonomous Mode', False, message))
             return False
     
     def test_movement_commands(self):
         """Test basic movement commands"""
-        print("\n🚗 Testing movement commands...")
+        print("\nTesting movement commands...")
+        
+        # Ensure emergency stop is reset first
+        reset_result = self.send_command({'cmd': 'reset_estop'})
+        time.sleep(0.5)
         
         # Test forward movement
         print("  Testing forward movement...")
@@ -190,11 +206,12 @@ class MicroPythonTester:
             'speed': 30,
             'duration': 1
         })
-        if result['status'] == 'ok':
-            print("    ✅ Forward command accepted")
+        if result and result.get('status') == 'ok':
+            print("    PASS: Forward command accepted")
             time.sleep(1.5)  # Wait for movement to complete
         else:
-            print(f"    ❌ Forward command failed: {result['message']}")
+            message = result.get('message', 'No response') if result else 'No response'
+            print(f"    FAIL: Forward command failed: {message}")
             self.test_results.append(('Movement Commands', False, 'Forward failed'))
             return False
         
@@ -206,29 +223,31 @@ class MicroPythonTester:
             'speed': 30,
             'duration': 1
         })
-        if result['status'] == 'ok':
-            print("    ✅ Rotation command accepted")
+        if result and result.get('status') == 'ok':
+            print("    PASS: Rotation command accepted")
             time.sleep(1.5)  # Wait for rotation to complete
         else:
-            print(f"    ❌ Rotation command failed: {result['message']}")
+            message = result.get('message', 'No response') if result else 'No response'
+            print(f"    FAIL: Rotation command failed: {message}")
             self.test_results.append(('Movement Commands', False, 'Rotation failed'))
             return False
         
         # Test stop
         print("  Testing stop command...")
         result = self.send_command({'cmd': 'stop'})
-        if result['status'] == 'ok':
-            print("    ✅ Stop command accepted")
+        if result and result.get('status') == 'ok':
+            print("    PASS: Stop command accepted")
             self.test_results.append(('Movement Commands', True, 'OK'))
             return True
         else:
-            print(f"    ❌ Stop command failed: {result['message']}")
+            message = result.get('message', 'No response') if result else 'No response'
+            print(f"    FAIL: Stop command failed: {message}")
             self.test_results.append(('Movement Commands', False, 'Stop failed'))
             return False
     
     def test_parameter_validation(self):
         """Test parameter validation"""
-        print("\n🔧 Testing parameter validation...")
+        print("\nTesting parameter validation...")
         
         # Test invalid direction
         result = self.send_command({
@@ -236,7 +255,8 @@ class MicroPythonTester:
             'dir': 'invalid',
             'speed': 50
         })
-        print(f"  Invalid direction test: {'✅' if result['status'] == 'error' else '❌'}")
+        success = result and result.get('status') == 'error'
+        print(f"  Invalid direction test: {'PASS' if success else 'FAIL'}")
         
         # Test extreme speed values
         result = self.send_command({
@@ -244,7 +264,8 @@ class MicroPythonTester:
             'dir': 'forward',
             'speed': 150  # Over 100%
         })
-        print(f"  High speed handling: {'✅' if result['status'] in ['ok', 'error'] else '❌'}")
+        success = result and result.get('status') in ['ok', 'error']
+        print(f"  High speed handling: {'PASS' if success else 'FAIL'}")
         
         self.test_results.append(('Parameter Validation', True, 'OK'))
         return True
@@ -253,7 +274,7 @@ class MicroPythonTester:
     def run_all_tests(self):
         """Run complete test suite"""
         print("=" * 60)
-        print("🧪 MICROPYTHON CONTROLLER TEST SUITE (Serial)")
+        print("MICROPYTHON CONTROLLER TEST SUITE (Serial)")
         print("=" * 60)
         print(f"Target: {self.serial_port} @ {self.baud_rate} baud")
         print()
@@ -273,11 +294,11 @@ class MicroPythonTester:
                 if not test():
                     all_passed = False
             except Exception as e:
-                print(f"  ❌ Test failed with exception: {e}")
+                print(f"  FAIL: Test failed with exception: {e}")
                 all_passed = False
                 
         # Final cleanup - ensure everything is stopped
-        print("\n🧹 Cleanup...")
+        print("\nCleanup...")
         if self.serial_connection and self.serial_connection.is_open:
             self.send_command({'cmd': 'stop'})
             self.send_command({'cmd': 'reset_estop'})
@@ -285,18 +306,18 @@ class MicroPythonTester:
         
         # Results summary
         print("\n" + "=" * 60)
-        print("📊 TEST RESULTS SUMMARY")
+        print("TEST RESULTS SUMMARY")
         print("=" * 60)
         
         for test_name, passed, message in self.test_results:
-            status = "✅ PASS" if passed else "❌ FAIL"
+            status = "PASS" if passed else "FAIL"
             print(f"{test_name:20} {status:10} {message}")
         
         print("\n" + "=" * 60)
         if all_passed:
-            print("🎉 ALL TESTS PASSED - Controller is ready for autonomous operation!")
+            print("ALL TESTS PASSED - Controller is ready for autonomous operation!")
         else:
-            print("⚠️  SOME TESTS FAILED - Check controller setup before autonomous operation")
+            print("SOME TESTS FAILED - Check controller setup before autonomous operation")
         print("=" * 60)
         
         return all_passed
@@ -316,7 +337,7 @@ def main():
         success = tester.run_all_tests()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\n\n⏹️  Test interrupted by user")
+        print("\n\nTest interrupted by user")
         # Cleanup
         if tester.serial_connection and tester.serial_connection.is_open:
             tester.send_command({'cmd': 'stop'})
@@ -324,7 +345,7 @@ def main():
             tester.disconnect()
         sys.exit(1)
     except Exception as e:
-        print(f"\n\n💥 Test suite failed with error: {e}")
+        print(f"\n\nTest suite failed with error: {e}")
         if tester.serial_connection and tester.serial_connection.is_open:
             tester.disconnect()
         sys.exit(1)
