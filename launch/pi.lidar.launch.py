@@ -9,8 +9,8 @@ import xacro
 
 def generate_launch_description():
     """
-    Basic Pi launcher - Robot model and transforms only
-    For basic robot visualization without sensors
+    Pi launcher with LIDAR - Robot model, transforms, and LIDAR sensor
+    For robot visualization and basic SLAM/navigation
     """
     # Check if we're told to use sim time
     use_sim_time = LaunchConfiguration('use_sim_time')
@@ -62,6 +62,33 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
+    # RPLIDAR node configuration
+    channel_type = LaunchConfiguration('channel_type', default='serial')
+    serial_port = LaunchConfiguration('serial_port', default='/dev/serial/by-id/usb-Silicon_Labs_CP2102N_USB_to_UART_Bridge_Controller_f4ff8904fb63ef118309e1a9c169b110-if00-port0')
+    serial_baudrate = LaunchConfiguration('serial_baudrate', default='460800')
+    frame_id = LaunchConfiguration('frame_id', default='lidar_frame')  # Use your robot's frame
+    inverted = LaunchConfiguration('inverted', default='false')
+    angle_compensate = LaunchConfiguration('angle_compensate', default='true')
+    scan_mode = LaunchConfiguration('scan_mode', default='Standard')
+
+    # RPLIDAR node - requires hardware to be connected
+    rplidar_node = Node(
+        package='sllidar_ros2',
+        executable='sllidar_node',
+        name='sllidar_node',
+        parameters=[
+            {'channel_type': channel_type},
+            {'serial_port': serial_port},
+            {'serial_baudrate': serial_baudrate},
+            {'frame_id': frame_id},
+            {'inverted': inverted},
+            {'angle_compensate': angle_compensate},
+            {'scan_mode': scan_mode},
+            {'use_sim_time': use_sim_time}
+        ],
+        output='screen'
+    )
+
     # Launch!
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -69,9 +96,18 @@ def generate_launch_description():
             default_value='false',
             description='Use sim time if true'),
 
+        DeclareLaunchArgument('channel_type', default_value=channel_type, description='Specifying channel type of lidar'),
+        DeclareLaunchArgument('serial_port', default_value=serial_port, description='Specifying usb port to connected lidar'),
+        DeclareLaunchArgument('serial_baudrate', default_value=serial_baudrate, description='Specifying usb port baudrate to connected lidar'),
+        DeclareLaunchArgument('frame_id', default_value=frame_id, description='Specifying frame_id of lidar'),
+        DeclareLaunchArgument('inverted', default_value=inverted, description='Specifying whether or not to invert scan data'),
+        DeclareLaunchArgument('angle_compensate', default_value=angle_compensate, description='Specifying whether or not to enable angle_compensate of scan data'),
+        DeclareLaunchArgument('scan_mode', default_value=scan_mode, description='Specifying scan mode of lidar'),
+
         node_robot_state_publisher,
         node_joint_state_publisher,
         static_tf_pub_map_odom,
         static_tf_pub_odom_base,
-        # Note: No sensors - basic robot model only
+        rplidar_node,
+        # Note: LIDAR enabled for basic navigation and mapping
     ])

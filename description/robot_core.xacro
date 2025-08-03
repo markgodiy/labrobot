@@ -236,20 +236,4 @@
         <mu2 value="0.001" />
     </gazebo>
 
-    <!-- FRONT MARKER (visual only) -->
-    <link name="front_marker">
-        <visual>
-            <origin xyz="${chassis_depth/2 + 0.05} 0 ${chassis_z + 0.05}" rpy="0 0 0" />
-            <geometry>
-                <cylinder radius="0.01" length="0.05" />
-            </geometry>
-            <material name="red" />
-        </visual>
-    </link>
-    <joint name="front_marker_joint" type="fixed">
-        <parent link="base_link" />
-        <child link="front_marker" />
-        <origin xyz="${chassis_depth/2 + 0.05} 0 ${chassis_z + 0.05}" rpy="0 0 0" />
-    </joint>
-
 </robot>
