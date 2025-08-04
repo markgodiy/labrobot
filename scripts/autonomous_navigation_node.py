@@ -17,7 +17,7 @@ Key Features:
 Subscribed Topics:
 - /scan (sensor_msgs/LaserScan): LIDAR data
 - /oak/rgb/image_raw (sensor_msgs/Image): RGB camera
-- /oak/depth/image_raw (sensor_msgs/Image): Depth camera
+- /oak/stereo/image_raw (sensor_msgs/Image): Depth camera (OAK-D Lite stereo depth)
 - /oak/points (sensor_msgs/PointCloud2): Point cloud data
 - /motor_controller/status (std_msgs/String): Motor controller status
 
@@ -115,7 +115,7 @@ class AutonomousNavigationNode(Node):
         
         self.depth_subscriber = self.create_subscription(
             Image,
-            '/oak/depth/image_raw',
+            '/oak/stereo/image_raw',  # OAK-D Lite publishes depth as stereo/image_raw
             self.depth_callback,
             sensor_qos
         )
@@ -415,27 +415,67 @@ class AutonomousNavigationNode(Node):
         path_clear = lidar_path_clear and depth_path_clear
         min_distance = min(min_lidar_distance, min_depth_distance)
         
-        # Make navigation decision
-        if path_clear:
-            # Path is clear - move forward at configured speed
-            if min_distance == float('inf') or min_distance > self.min_obstacle_distance:
-                if self.current_action != "forward":
-                    # Use configured default speed directly (no scaling)
-                    # Only reduce if obstacle is very close (within 0.3m)
-                    if min_distance != float('inf') and min_distance < 0.3:
-                        # Very close obstacle - reduce to 75% of configured speed
-                        actual_speed = max(90, int(self.default_speed * 0.75))
-                    else:
-                        # Clear path - use full configured speed
-                        actual_speed = self.default_speed
+        # Make navigation decision with improved logic
+        # Priority 1: If we're in a constrained environment (one side blocked), prefer turning to open space
+        if lidar_path_clear and depth_path_clear:
+            # Re-analyze LIDAR for side clearance to make smarter navigation decisions
+            should_turn_right = False
+            should_turn_left = False
+            
+            if scan_data:  # Re-check LIDAR data for side analysis
+                total_points = len(scan_data.ranges)
+                quarter_point = total_points // 4
+                
+                # Analyze left and right quarters
+                left_ranges = scan_data.ranges[:quarter_point]
+                right_ranges = scan_data.ranges[-quarter_point:]
+                
+                # Count clear points on each side
+                left_valid = [r for r in left_ranges if scan_data.range_min < r < scan_data.range_max]
+                right_valid = [r for r in right_ranges if scan_data.range_min < r < scan_data.range_max]
+                
+                left_clear_count = len([r for r in left_valid if r > self.min_obstacle_distance])
+                right_clear_count = len([r for r in right_valid if r > self.min_obstacle_distance])
+                
+                left_clear_pct = (left_clear_count / max(1, len(left_valid))) * 100
+                right_clear_pct = (right_clear_count / max(1, len(right_valid))) * 100
+                
+                # Decision logic: if one side is heavily blocked and other is open, turn toward open space
+                if left_clear_pct < 20 and right_clear_pct > 70:
+                    should_turn_right = True
+                elif right_clear_pct < 20 and left_clear_pct > 70:
+                    should_turn_left = True
+            
+            if should_turn_right:
+                # Left blocked, right clear - turn right toward open space
+                if self.current_action != "navigate_right":
+                    actual_rotation_speed = max(90, self.rotation_speed)
+                    angular_speed = -(actual_rotation_speed / 100.0)  # Negative for right turn
                     
-                    # Convert percentage to twist value (0.0 to 1.0 range)
+                    if self.send_movement_command(angular_z=angular_speed):
+                        self.current_action = "navigate_right"
+                        self.get_logger().info(f"Smart navigation: turning right toward open space at {actual_rotation_speed}% power")
+                        
+            elif should_turn_left:
+                # Right blocked, left clear - turn left toward open space
+                if self.current_action != "navigate_left":
+                    actual_rotation_speed = max(90, self.rotation_speed)
+                    angular_speed = actual_rotation_speed / 100.0  # Positive for left turn
+                    
+                    if self.send_movement_command(angular_z=angular_speed):
+                        self.current_action = "navigate_left"
+                        self.get_logger().info(f"Smart navigation: turning left toward open space at {actual_rotation_speed}% power")
+                        
+            elif min_distance == float('inf') or min_distance > self.min_obstacle_distance:
+                # Both sides reasonably clear, or very open space - move forward
+                if self.current_action not in ["forward", "navigate_left", "navigate_right"]:
+                    actual_speed = self.default_speed
                     linear_speed = actual_speed / 100.0
                     
                     if self.send_movement_command(linear_x=linear_speed):
                         self.current_action = "forward"
                         distance_str = f"{min_distance:.2f}m" if min_distance != float('inf') else "open space"
-                        self.get_logger().info(f"Moving forward at {actual_speed}% power (twist: {linear_speed:.3f}, distance: {distance_str})")
+                        self.get_logger().info(f"Moving forward at {actual_speed}% power (distance: {distance_str})")
         
         elif best_lidar_direction in ["left", "right"]:
             # Obstacle detected - rotate to clear direction (LIDAR-based)
