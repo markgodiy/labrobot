@@ -552,12 +552,6 @@ class AutonomousNavigationNode(Node):
         self.obstacle_detected = not path_clear
         self.path_clear = path_clear
         self.last_command_time = time.time()
-        
-        # Stuck detection and escape behavior
-        stuck_detected, reason = self.is_stuck()
-        if stuck_detected:
-            self.get_logger().warn(f"Stuck detected: {reason} - initiating escape behavior")
-            self.execute_escape_behavior(reason)
     
     def publish_status(self):
         """Publish navigation status"""
