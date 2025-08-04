@@ -17,7 +17,7 @@ Key Features:
 Subscribed Topics:
 - /scan (sensor_msgs/LaserScan): LIDAR data
 - /oak/rgb/image_raw (sensor_msgs/Image): RGB camera
-- /oak/stereo/image_raw (sensor_msgs/Image): Depth camera (OAK-D Lite stereo depth)
+- /oak/depth/image_raw (sensor_msgs/Image): Depth camera
 - /oak/points (sensor_msgs/PointCloud2): Point cloud data
 - /motor_controller/status (std_msgs/String): Motor controller status
 
@@ -27,7 +27,6 @@ Published Topics:
 
 Services:
 - /emergency_stop (std_srvs/Trigger): Emergency stop
-- /reset_emergency_stop (std_srvs/Trigger): Reset emergency stop
 - /set_autonomous_mode (std_srvs/SetBool): Enable/disable autonomous mode
 """
 
@@ -101,6 +100,10 @@ class AutonomousNavigationNode(Node):
         self.last_escape_direction = None  # Track last escape direction to alternate
         self.consecutive_turns = 0  # Count consecutive turn actions
         self.max_consecutive_turns = 6  # Max turns before forced escape
+        
+        # Post-escape forced forward mode
+        self.post_escape_forward_time = None
+        self.post_escape_forward_duration = 3.0  # Force forward for 3 seconds after escape
         
         # Motor bridge service clients
         self.motor_stop_client = self.create_client(Trigger, '/motor/stop')
@@ -226,15 +229,6 @@ class AutonomousNavigationNode(Node):
             twist_msg = Twist()
             twist_msg.linear.x = linear_x
             twist_msg.angular.z = angular_z
-            
-            # Debug logging to show exactly what we're sending
-            if abs(linear_x) > 0.01:
-                expected_speed = int(abs(linear_x) * 100)
-                self.get_logger().info(f"Sending linear command: {linear_x:.3f} -> {expected_speed}% motor speed")
-            if abs(angular_z) > 0.01:
-                expected_speed = int(abs(angular_z) * 100)
-                self.get_logger().info(f"Sending angular command: {angular_z:.3f} -> {expected_speed}% motor speed")
-                
             self.cmd_vel_publisher.publish(twist_msg)
             return True
         except Exception as e:
@@ -421,6 +415,25 @@ class AutonomousNavigationNode(Node):
             self.execute_escape_behavior("continuing_escape")
             return
         
+        # Check if we're in post-escape forced forward period
+        if self.post_escape_forward_time is not None:
+            elapsed_since_escape = time.time() - self.post_escape_forward_time
+            if elapsed_since_escape < self.post_escape_forward_duration:
+                # Force forward movement, ignore obstacle detection temporarily
+                if self.current_action != "post_escape_forward":
+                    actual_speed = max(90, self.default_speed)
+                    linear_speed = actual_speed / 100.0
+                    
+                    if self.send_movement_command(linear_x=linear_speed):
+                        self.update_action_history("post_escape_forward")
+                        remaining_time = self.post_escape_forward_duration - elapsed_since_escape
+                        self.get_logger().info(f"Post-escape forced forward: {remaining_time:.1f}s remaining at {actual_speed}% power")
+                return
+            else:
+                # End post-escape forward period
+                self.post_escape_forward_time = None
+                self.get_logger().info("Post-escape forward period complete, resuming normal navigation")
+
         # If no sensor data, stop if not already idle
         if not scan_data and not depth_data:
             if self.current_action != "idle":
@@ -437,98 +450,35 @@ class AutonomousNavigationNode(Node):
         min_distance = min(min_lidar_distance, min_depth_distance)
         
         # Make navigation decision with improved logic
-        # Priority 1: If we're in a constrained environment (one side blocked), prefer turning to open space
-        if lidar_path_clear and depth_path_clear:
-            # Re-analyze LIDAR for side clearance to make smarter navigation decisions
-            should_turn_right = False
-            should_turn_left = False
-            
-            if scan_data:  # Re-check LIDAR data for side analysis
-                total_points = len(scan_data.ranges)
-                quarter_point = total_points // 4
+        if path_clear and min_distance > self.min_obstacle_distance:
+            # Path is clear - move forward at 90% minimum
+            if self.current_action not in ["forward"]:
+                actual_speed = max(90, self.default_speed)
+                linear_speed = actual_speed / 100.0
                 
-                # Analyze left and right quarters
-                left_ranges = scan_data.ranges[:quarter_point]
-                right_ranges = scan_data.ranges[-quarter_point:]
-                
-                # Count clear points on each side
-                left_valid = [r for r in left_ranges if scan_data.range_min < r < scan_data.range_max]
-                right_valid = [r for r in right_ranges if scan_data.range_min < r < scan_data.range_max]
-                
-                left_clear_count = len([r for r in left_valid if r > self.min_obstacle_distance])
-                right_clear_count = len([r for r in right_valid if r > self.min_obstacle_distance])
-                
-                left_clear_pct = (left_clear_count / max(1, len(left_valid))) * 100
-                right_clear_pct = (right_clear_count / max(1, len(right_valid))) * 100
-                
-                # Decision logic: if one side is heavily blocked and other is open, turn toward open space
-                if left_clear_pct < 20 and right_clear_pct > 70:
-                    should_turn_right = True
-                elif right_clear_pct < 20 and left_clear_pct > 70:
-                    should_turn_left = True
-            
-            if should_turn_right:
-                # Left blocked, right clear - turn right toward open space
-                if self.current_action != "navigate_right":
-                    actual_rotation_speed = max(90, self.rotation_speed)
-                    angular_speed = -(actual_rotation_speed / 100.0)  # Negative for right turn
-                    
-                    if self.send_movement_command(angular_z=angular_speed):
-                        self.update_action_history("navigate_right")
-                        self.get_logger().info(f"Smart navigation: turning right toward open space at {actual_rotation_speed}% power")
-                        
-            elif should_turn_left:
-                # Right blocked, left clear - turn left toward open space
-                if self.current_action != "navigate_left":
-                    actual_rotation_speed = max(90, self.rotation_speed)
-                    angular_speed = actual_rotation_speed / 100.0  # Positive for left turn
-                    
-                    if self.send_movement_command(angular_z=angular_speed):
-                        self.update_action_history("navigate_left")
-                        self.get_logger().info(f"Smart navigation: turning left toward open space at {actual_rotation_speed}% power")
-                        
-            elif min_distance == float('inf') or min_distance > self.min_obstacle_distance:
-                # Both sides reasonably clear, or very open space - move forward
-                if self.current_action not in ["forward", "navigate_left", "navigate_right"]:
-                    actual_speed = self.default_speed
-                    linear_speed = actual_speed / 100.0
-                    
-                    if self.send_movement_command(linear_x=linear_speed):
-                        self.update_action_history("forward")
-                        distance_str = f"{min_distance:.2f}m" if min_distance != float('inf') else "open space"
-                        self.get_logger().info(f"Moving forward at {actual_speed}% power (distance: {distance_str})")
+                if self.send_movement_command(linear_x=linear_speed):
+                    self.update_action_history("forward")
+                    distance_str = f"{min_distance:.2f}m" if min_distance != float('inf') else "open space"
+                    self.get_logger().info(f"Moving forward at {actual_speed}% power (distance: {distance_str})")
         
-        elif best_lidar_direction in ["left", "right"]:
-            # Obstacle detected - rotate to clear direction (LIDAR-based)
-            if self.current_action != f"rotate_{best_lidar_direction}":
+        elif best_lidar_direction in ["left", "right"] or best_depth_direction in ["left", "right"]:
+            # Obstacle detected - choose rotation direction intelligently
+            preferred_direction = self.choose_turn_direction(best_lidar_direction, best_depth_direction)
+            
+            if preferred_direction and self.current_action != f"rotate_{preferred_direction}":
                 # Use configured rotation speed (minimum 90% enforced)
                 actual_rotation_speed = max(90, self.rotation_speed)
                 angular_speed = actual_rotation_speed / 100.0
                 
-                if best_lidar_direction == "right":
+                if preferred_direction == "right":
                     angular_speed = -angular_speed  # Negative for right turn
                 
-                self.get_logger().info(f"LIDAR rotation: {best_lidar_direction}, {actual_rotation_speed}% power (twist: {angular_speed:.3f})")
+                source = "LIDAR" if best_lidar_direction == preferred_direction else "depth"
+                self.get_logger().info(f"{source} rotation: {preferred_direction}, {actual_rotation_speed}% power (twist: {angular_speed:.3f})")
                 
                 if self.send_movement_command(angular_z=angular_speed):
-                    self.update_action_history(f"rotate_{best_lidar_direction}")
-                    self.get_logger().info(f"Rotating {best_lidar_direction} to avoid obstacle (distance: {min_distance:.2f}m)")
-        
-        elif best_depth_direction in ["left", "right"]:
-            # Obstacle detected - rotate to clear direction (depth-based)
-            if self.current_action != f"rotate_{best_depth_direction}":
-                # Use configured rotation speed (minimum 90% enforced)
-                actual_rotation_speed = max(90, self.rotation_speed)
-                angular_speed = actual_rotation_speed / 100.0
-                
-                if best_depth_direction == "right":
-                    angular_speed = -angular_speed  # Negative for right turn
-                
-                self.get_logger().info(f"Depth rotation: {best_depth_direction}, {actual_rotation_speed}% power (twist: {angular_speed:.3f})")
-                
-                if self.send_movement_command(angular_z=angular_speed):
-                    self.update_action_history(f"rotate_{best_depth_direction}")
-                    self.get_logger().info(f"Rotating {best_depth_direction} to avoid ground obstacle (distance: {min_distance:.2f}m)")
+                    self.update_action_history(f"rotate_{preferred_direction}")
+                    self.get_logger().info(f"Rotating {preferred_direction} to avoid obstacle (distance: {min_distance:.2f}m)")
         
         elif best_lidar_direction == "backward" or best_depth_direction == "backward":
             # No clear path - back up at configured speed (90% minimum)
@@ -559,237 +509,17 @@ class AutonomousNavigationNode(Node):
         nav_state_msg.data = self.current_action
         self.nav_state_publisher.publish(nav_state_msg)
         
-        # Gather detailed sensor data for debug information
-        with self.state_lock:
-            scan_data = self.latest_scan
-            depth_data = self.latest_depth_image
-            controller_status = self.latest_controller_status
-        
-        # Analyze current sensor data for debug info
-        lidar_debug = {}
-        depth_debug = {}
-        
-        if scan_data:
-            lidar_path_clear, min_lidar_distance, best_lidar_direction = self.analyze_lidar_obstacles(scan_data)
-            
-            # Get more detailed LIDAR analysis
-            center_index = len(scan_data.ranges) // 2
-            quarter_point = len(scan_data.ranges) // 4
-            
-            # Front sector analysis
-            half_range = np.radians(self.scan_angle_range / 2)
-            range_indices = int(half_range / scan_data.angle_increment)
-            start_idx = max(0, center_index - range_indices)
-            end_idx = min(len(scan_data.ranges), center_index + range_indices)
-            front_ranges = scan_data.ranges[start_idx:end_idx]
-            valid_front = [r for r in front_ranges if scan_data.range_min < r < scan_data.range_max]
-            
-            # Side sector analysis
-            left_ranges = scan_data.ranges[:quarter_point]
-            right_ranges = scan_data.ranges[-quarter_point:]
-            valid_left = [r for r in left_ranges if scan_data.range_min < r < scan_data.range_max]
-            valid_right = [r for r in right_ranges if scan_data.range_min < r < scan_data.range_max]
-            
-            lidar_debug = {
-                'available': True,
-                'total_points': len(scan_data.ranges),
-                'angle_range': f"{np.degrees(scan_data.angle_min):.1f} to {np.degrees(scan_data.angle_max):.1f} deg",
-                'angle_increment': f"{np.degrees(scan_data.angle_increment):.2f} deg",
-                'front_sector': {
-                    'total_points': len(front_ranges),
-                    'valid_points': len(valid_front),
-                    'min_distance': f"{min(valid_front):.3f}m" if valid_front else "no_data",
-                    'avg_distance': f"{np.mean(valid_front):.3f}m" if valid_front else "no_data",
-                    'obstacle_detected': min_lidar_distance < self.min_obstacle_distance
-                },
-                'left_sector': {
-                    'valid_points': len(valid_left),
-                    'min_distance': f"{min(valid_left):.3f}m" if valid_left else "no_data",
-                    'avg_distance': f"{np.mean(valid_left):.3f}m" if valid_left else "no_data",
-                    'clear_percentage': f"{len([r for r in valid_left if r > self.min_obstacle_distance]) / max(1, len(valid_left)) * 100:.1f}%"
-                },
-                'right_sector': {
-                    'valid_points': len(valid_right),
-                    'min_distance': f"{min(valid_right):.3f}m" if valid_right else "no_data",
-                    'avg_distance': f"{np.mean(valid_right):.3f}m" if valid_right else "no_data",
-                    'clear_percentage': f"{len([r for r in valid_right if r > self.min_obstacle_distance]) / max(1, len(valid_right)) * 100:.1f}%"
-                },
-                'path_clear': lidar_path_clear,
-                'min_distance': f"{min_lidar_distance:.3f}m",
-                'recommended_direction': best_lidar_direction
-            }
-        else:
-            lidar_debug = {'available': False, 'reason': 'no_scan_data'}
-        
-        if depth_data:
-            depth_path_clear, min_depth_distance, best_depth_direction = self.analyze_depth_obstacles(depth_data)
-            
-            try:
-                # Get depth image analysis details
-                depth_image = self.bridge.imgmsg_to_cv2(depth_data, desired_encoding="passthrough")
-                height, width = depth_image.shape
-                
-                # ROI details
-                roi_height = height // 3
-                roi_width = width // 2
-                roi_y_start = height - roi_height
-                roi_x_start = width // 4
-                roi_x_end = roi_x_start + roi_width
-                
-                depth_roi = depth_image[roi_y_start:height, roi_x_start:roi_x_end]
-                
-                if depth_image.dtype == np.uint16:
-                    depth_roi_meters = depth_roi.astype(np.float32) / 1000.0
-                else:
-                    depth_roi_meters = depth_roi.astype(np.float32)
-                
-                valid_depths = depth_roi_meters[(depth_roi_meters > 0.1) & (depth_roi_meters < 5.0)]
-                
-                # Left/right analysis
-                roi_center = roi_width // 2
-                left_roi = depth_roi_meters[:, :roi_center]
-                right_roi = depth_roi_meters[:, roi_center:]
-                left_valid = left_roi[(left_roi > 0.1) & (left_roi < 5.0)]
-                right_valid = right_roi[(right_roi > 0.1) & (right_roi < 5.0)]
-                
-                depth_debug = {
-                    'available': True,
-                    'image_size': f"{width}x{height}",
-                    'roi_size': f"{roi_width}x{roi_height}",
-                    'roi_position': f"({roi_x_start},{roi_y_start}) to ({roi_x_end},{height})",
-                    'data_type': str(depth_image.dtype),
-                    'total_roi_pixels': roi_width * roi_height,
-                    'valid_pixels': len(valid_depths),
-                    'valid_percentage': f"{len(valid_depths) / max(1, roi_width * roi_height) * 100:.1f}%",
-                    'depth_stats': {
-                        'min_depth': f"{np.min(valid_depths):.3f}m" if len(valid_depths) > 0 else "no_data",
-                        'avg_depth': f"{np.mean(valid_depths):.3f}m" if len(valid_depths) > 0 else "no_data",
-                        'max_depth': f"{np.max(valid_depths):.3f}m" if len(valid_depths) > 0 else "no_data"
-                    },
-                    'left_side': {
-                        'valid_pixels': len(left_valid),
-                        'min_depth': f"{np.min(left_valid):.3f}m" if len(left_valid) > 0 else "no_data",
-                        'avg_depth': f"{np.mean(left_valid):.3f}m" if len(left_valid) > 0 else "no_data"
-                    },
-                    'right_side': {
-                        'valid_pixels': len(right_valid),
-                        'min_depth': f"{np.min(right_valid):.3f}m" if len(right_valid) > 0 else "no_data",
-                        'avg_depth': f"{np.mean(right_valid):.3f}m" if len(right_valid) > 0 else "no_data"
-                    },
-                    'threshold': f"{self.depth_obstacle_threshold}mm ({self.depth_obstacle_threshold/1000.0:.3f}m)",
-                    'path_clear': depth_path_clear,
-                    'min_distance': f"{min_depth_distance:.3f}m",
-                    'recommended_direction': best_depth_direction
-                }
-            except Exception as e:
-                depth_debug = {'available': False, 'error': str(e)}
-        else:
-            depth_debug = {'available': False, 'reason': 'no_depth_data'}
-        
-        # Combine sensor fusion results
-        sensor_fusion = {}
-        if scan_data or depth_data:
-            lidar_clear = lidar_debug.get('path_clear', True)
-            depth_clear = depth_debug.get('path_clear', True)
-            combined_clear = lidar_clear and depth_clear
-            
-            # Get minimum distances
-            lidar_min = float('inf')
-            depth_min = float('inf')
-            
-            if 'min_distance' in lidar_debug:
-                try:
-                    lidar_min = float(lidar_debug['min_distance'].replace('m', ''))
-                except:
-                    pass
-            
-            if 'min_distance' in depth_debug:
-                try:
-                    depth_min = float(depth_debug['min_distance'].replace('m', ''))
-                except:
-                    pass
-            
-            combined_min = min(lidar_min, depth_min)
-            
-            sensor_fusion = {
-                'lidar_clear': lidar_clear,
-                'depth_clear': depth_clear,
-                'combined_clear': combined_clear,
-                'lidar_min_distance': f"{lidar_min:.3f}m" if lidar_min != float('inf') else "inf",
-                'depth_min_distance': f"{depth_min:.3f}m" if depth_min != float('inf') else "inf",
-                'combined_min_distance': f"{combined_min:.3f}m" if combined_min != float('inf') else "inf",
-                'obstacle_threshold': f"{self.min_obstacle_distance:.3f}m"
-            }
-        
-        # Navigation decision details
-        current_time = time.time()
-        is_stuck, stuck_reason = self.is_stuck()
-        
-        navigation_decision = {
-            'current_action': self.current_action,
-            'path_clear': self.path_clear,
-            'obstacle_detected': self.obstacle_detected,
-            'last_command_time': time.time() - self.last_command_time,
-            'action_duration': current_time - self.action_start_time,
-            'speed_settings': {
-                'default_speed': f"{self.default_speed}%",
-                'rotation_speed': f"{self.rotation_speed}%",
-                'max_speed': f"{self.max_speed}%",
-                'minimum_power_rule': "90%"
-            }
-        }
-        
-        # Stuck detection status
-        stuck_detection = {
-            'is_stuck': is_stuck,
-            'stuck_reason': stuck_reason,
-            'escape_mode': self.escape_mode,
-            'consecutive_turns': self.consecutive_turns,
-            'max_consecutive_turns': self.max_consecutive_turns,
-            'action_history_length': len(self.action_history),
-            'recent_actions': [h['action'] for h in self.action_history[-5:]] if len(self.action_history) >= 5 else [h['action'] for h in self.action_history],
-            'escape_duration': current_time - self.escape_start_time if self.escape_mode else 0.0,
-            'last_escape_direction': self.last_escape_direction,
-            'detection_parameters': {
-                'stuck_detection_time': f"{self.stuck_detection_time}s",
-                'max_consecutive_turns': self.max_consecutive_turns
-            }
-        }
-        
-        # Motor controller status
-        motor_status = {
-            'connected': controller_status is not None,
-            'last_status': controller_status if controller_status else "no_data"
-        }
-        
-        # System status
-        system_status = {
-            'autonomous_enabled': self.autonomous_enabled,
-            'emergency_stop_active': self.emergency_stop_active,
-            'navigation_active': self.navigation_active,
-            'node_uptime': time.time() - getattr(self, 'start_time', time.time()),
-            'parameters': {
-                'min_obstacle_distance': f"{self.min_obstacle_distance}m",
-                'scan_angle_range': f"{self.scan_angle_range}°",
-                'depth_threshold': f"{self.depth_obstacle_threshold}mm",
-                'command_timeout': f"{self.command_timeout}s"
-            }
-        }
-        
-        # Compile comprehensive debug data
-        debug_data = {
-            'timestamp': time.time(),
-            'system_status': system_status,
-            'navigation_decision': navigation_decision,
-            'stuck_detection': stuck_detection,
-            'sensor_fusion': sensor_fusion,
-            'lidar_analysis': lidar_debug,
-            'depth_analysis': depth_debug,
-            'motor_controller': motor_status
-        }
-        
+        # Publish debug information
         debug_msg = String()
-        debug_msg.data = json.dumps(debug_data, indent=2)
+        debug_data = {
+            'autonomous_enabled': self.autonomous_enabled,
+            'current_action': self.current_action,
+            'obstacle_detected': self.obstacle_detected,
+            'path_clear': self.path_clear,
+            'emergency_stop': self.emergency_stop_active,
+            'controller_connected': self.latest_controller_status is not None
+        }
+        debug_msg.data = json.dumps(debug_data)
         self.debug_publisher.publish(debug_msg)
     
     def emergency_stop_callback(self, request, response):
@@ -855,17 +585,65 @@ class AutonomousNavigationNode(Node):
         
         return response
 
+    def choose_turn_direction(self, lidar_direction, depth_direction):
+        """Choose turn direction intelligently, considering previous stuck patterns"""
+        # Get available directions from sensors
+        available_directions = []
+        if lidar_direction in ["left", "right"]:
+            available_directions.append(lidar_direction)
+        if depth_direction in ["left", "right"] and depth_direction not in available_directions:
+            available_directions.append(depth_direction)
+        
+        if not available_directions:
+            return None
+        
+        # If only one direction available, use it
+        if len(available_directions) == 1:
+            chosen_direction = available_directions[0]
+            self.get_logger().info(f"Only {chosen_direction} available from sensors")
+            return chosen_direction
+        
+        # If both directions available, check recent history to avoid problematic patterns
+        recent_actions = [h['action'] for h in self.action_history[-10:]]  # Look at last 10 actions
+        left_count = len([a for a in recent_actions if "left" in a.lower()])
+        right_count = len([a for a in recent_actions if "right" in a.lower()])
+        
+        # Strong bias against the direction that caused the last stuck state
+        # Check if we recently escaped and what direction dominated before escape
+        recent_escape_time = 30.0  # seconds
+        if hasattr(self, 'last_escape_time') and (time.time() - self.last_escape_time) < recent_escape_time:
+            if self.last_escape_direction:
+                opposite_direction = "right" if self.last_escape_direction == "left" else "left"
+                if opposite_direction in available_directions:
+                    self.get_logger().info(f"Post-escape bias: choosing {opposite_direction} (opposite of stuck direction {self.last_escape_direction})")
+                    return opposite_direction
+        
+        # Default logic: prefer the direction we've used less recently
+        if left_count > right_count and "right" in available_directions:
+            chosen_direction = "right"
+            self.get_logger().info(f"Choosing right (left used {left_count} times recently vs right {right_count} times)")
+        elif right_count > left_count and "left" in available_directions:
+            chosen_direction = "left"
+            self.get_logger().info(f"Choosing left (right used {right_count} times recently vs left {left_count} times)")
+        else:
+            # Equal usage or no preference, use sensor priority (LIDAR over depth)
+            chosen_direction = lidar_direction if lidar_direction in available_directions else depth_direction
+            self.get_logger().info(f"Equal usage or no preference, using sensor priority: {chosen_direction}")
+        
+        return chosen_direction
+
     def update_action_history(self, new_action):
         """Update action history for stuck detection"""
         current_time = time.time()
         
         # If action changed, record the change
         if new_action != self.current_action:
-            self.action_history.append({
-                'action': self.current_action,
-                'duration': current_time - self.action_start_time,
-                'timestamp': current_time
-            })
+            if hasattr(self, 'current_action') and self.current_action:
+                self.action_history.append({
+                    'action': self.current_action,
+                    'duration': current_time - self.action_start_time,
+                    'timestamp': current_time
+                })
             
             # Keep only recent history (last 30 seconds)
             self.action_history = [h for h in self.action_history if current_time - h['timestamp'] < 30.0]
@@ -902,8 +680,7 @@ class AutonomousNavigationNode(Node):
             recent_actions = [h['action'] for h in self.action_history[-4:]]
             
             # Check for left-right oscillation pattern
-            if (recent_actions.count("rotate_left") >= 2 and recent_actions.count("rotate_right") >= 2) or \
-               (recent_actions.count("navigate_left") >= 2 and recent_actions.count("navigate_right") >= 2):
+            if (recent_actions.count("rotate_left") >= 2 and recent_actions.count("rotate_right") >= 2):
                 self.get_logger().warning(f"Detected oscillation pattern: {recent_actions}")
                 return True, "oscillation"
         
@@ -958,6 +735,9 @@ class AutonomousNavigationNode(Node):
             self.consecutive_turns = 0  # Reset turn counter
             self.action_history = []    # Clear history to start fresh
             
+            # Track when we last escaped and what direction caused the stuck state
+            self.last_escape_time = time.time()
+            
             if self.current_action != "escape_forward":
                 actual_speed = max(90, self.default_speed)
                 linear_speed = actual_speed / 100.0
@@ -965,6 +745,9 @@ class AutonomousNavigationNode(Node):
                 if self.send_movement_command(linear_x=linear_speed):
                     self.current_action = "escape_forward"
                     self.get_logger().info(f"Escape complete: trying forward at {actual_speed}% power")
+                    
+                    # Force a longer forward attempt after escape to avoid immediate re-stuck
+                    self.post_escape_forward_time = time.time()
 
 def main(args=None):
     rclpy.init(args=args)
