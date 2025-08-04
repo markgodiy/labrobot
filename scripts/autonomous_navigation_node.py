@@ -92,6 +92,16 @@ class AutonomousNavigationNode(Node):
         self.obstacle_detected = False
         self.path_clear = True
         
+        # Stuck detection and escape variables
+        self.action_history = []  # Track recent actions to detect stuck patterns
+        self.action_start_time = time.time()  # When current action started
+        self.stuck_detection_time = 8.0  # seconds - how long before considering stuck
+        self.escape_mode = False  # Flag for when in escape behavior
+        self.escape_start_time = 0.0
+        self.last_escape_direction = None  # Track last escape direction to alternate
+        self.consecutive_turns = 0  # Count consecutive turn actions
+        self.max_consecutive_turns = 6  # Max turns before forced escape
+        
         # Motor bridge service clients
         self.motor_stop_client = self.create_client(Trigger, '/motor/stop')
         self.motor_emergency_stop_client = self.create_client(Trigger, '/motor/emergency_stop')
@@ -395,18 +405,29 @@ class AutonomousNavigationNode(Node):
         """Main navigation decision loop"""
         if not self.autonomous_enabled or self.emergency_stop_active:
             return
-        
+
         with self.state_lock:
             scan_data = self.latest_scan
             depth_data = self.latest_depth_image
+        
+        # Check for stuck behavior first
+        is_stuck, stuck_reason = self.is_stuck()
+        if is_stuck:
+            self.execute_escape_behavior(stuck_reason)
+            return
+        
+        # If in escape mode, continue escape sequence
+        if self.escape_mode:
+            self.execute_escape_behavior("continuing_escape")
+            return
         
         # If no sensor data, stop if not already idle
         if not scan_data and not depth_data:
             if self.current_action != "idle":
                 self.stop_movement()
-                self.current_action = "idle"
+                self.update_action_history("idle")
             return
-        
+
         # Analyze obstacles
         lidar_path_clear, min_lidar_distance, best_lidar_direction = self.analyze_lidar_obstacles(scan_data)
         depth_path_clear, min_depth_distance, best_depth_direction = self.analyze_depth_obstacles(depth_data)
@@ -453,7 +474,7 @@ class AutonomousNavigationNode(Node):
                     angular_speed = -(actual_rotation_speed / 100.0)  # Negative for right turn
                     
                     if self.send_movement_command(angular_z=angular_speed):
-                        self.current_action = "navigate_right"
+                        self.update_action_history("navigate_right")
                         self.get_logger().info(f"Smart navigation: turning right toward open space at {actual_rotation_speed}% power")
                         
             elif should_turn_left:
@@ -463,7 +484,7 @@ class AutonomousNavigationNode(Node):
                     angular_speed = actual_rotation_speed / 100.0  # Positive for left turn
                     
                     if self.send_movement_command(angular_z=angular_speed):
-                        self.current_action = "navigate_left"
+                        self.update_action_history("navigate_left")
                         self.get_logger().info(f"Smart navigation: turning left toward open space at {actual_rotation_speed}% power")
                         
             elif min_distance == float('inf') or min_distance > self.min_obstacle_distance:
@@ -473,7 +494,7 @@ class AutonomousNavigationNode(Node):
                     linear_speed = actual_speed / 100.0
                     
                     if self.send_movement_command(linear_x=linear_speed):
-                        self.current_action = "forward"
+                        self.update_action_history("forward")
                         distance_str = f"{min_distance:.2f}m" if min_distance != float('inf') else "open space"
                         self.get_logger().info(f"Moving forward at {actual_speed}% power (distance: {distance_str})")
         
@@ -490,7 +511,7 @@ class AutonomousNavigationNode(Node):
                 self.get_logger().info(f"LIDAR rotation: {best_lidar_direction}, {actual_rotation_speed}% power (twist: {angular_speed:.3f})")
                 
                 if self.send_movement_command(angular_z=angular_speed):
-                    self.current_action = f"rotate_{best_lidar_direction}"
+                    self.update_action_history(f"rotate_{best_lidar_direction}")
                     self.get_logger().info(f"Rotating {best_lidar_direction} to avoid obstacle (distance: {min_distance:.2f}m)")
         
         elif best_depth_direction in ["left", "right"]:
@@ -506,7 +527,7 @@ class AutonomousNavigationNode(Node):
                 self.get_logger().info(f"Depth rotation: {best_depth_direction}, {actual_rotation_speed}% power (twist: {angular_speed:.3f})")
                 
                 if self.send_movement_command(angular_z=angular_speed):
-                    self.current_action = f"rotate_{best_depth_direction}"
+                    self.update_action_history(f"rotate_{best_depth_direction}")
                     self.get_logger().info(f"Rotating {best_depth_direction} to avoid ground obstacle (distance: {min_distance:.2f}m)")
         
         elif best_lidar_direction == "backward" or best_depth_direction == "backward":
@@ -517,20 +538,26 @@ class AutonomousNavigationNode(Node):
                 linear_speed = -(actual_speed / 100.0)  # Negative for backward
                 
                 if self.send_movement_command(linear_x=linear_speed):
-                    self.current_action = "backward"
+                    self.update_action_history("backward")
                     self.get_logger().info(f"Backing up at {actual_speed}% power (twist: {linear_speed:.3f}) - no clear path (distance: {min_distance:.2f}m)")
         
         else:
             # Stop and reassess
             if self.current_action != "idle":
                 if self.stop_movement():
-                    self.current_action = "idle"
+                    self.update_action_history("idle")
                     self.get_logger().info("Stopping - reassessing situation")
         
         # Update navigation state
         self.obstacle_detected = not path_clear
         self.path_clear = path_clear
         self.last_command_time = time.time()
+        
+        # Stuck detection and escape behavior
+        stuck_detected, reason = self.is_stuck()
+        if stuck_detected:
+            self.get_logger().warn(f"Stuck detected: {reason} - initiating escape behavior")
+            self.execute_escape_behavior(reason)
     
     def publish_status(self):
         """Publish navigation status"""
@@ -792,7 +819,7 @@ class AutonomousNavigationNode(Node):
                 if not self.autonomous_enabled:
                     # Stop current movement
                     self.stop_movement()
-                    self.current_action = "idle"
+                    self.update_action_history("idle")
             else:
                 response.success = False
                 response.message = "Failed to set autonomous mode"
@@ -812,20 +839,113 @@ class AutonomousNavigationNode(Node):
         
         return response
 
-def main(args=None):
-    rclpy.init(args=args)
+    def update_action_history(self, new_action):
+        """Update action history for stuck detection"""
+        current_time = time.time()
+        
+        # If action changed, record the change
+        if new_action != self.current_action:
+            self.action_history.append({
+                'action': self.current_action,
+                'duration': current_time - self.action_start_time,
+                'timestamp': current_time
+            })
+            
+            # Keep only recent history (last 30 seconds)
+            self.action_history = [h for h in self.action_history if current_time - h['timestamp'] < 30.0]
+            
+            # Reset consecutive turn counter if we did something other than turn
+            if new_action not in ["rotate_left", "rotate_right", "navigate_left", "navigate_right"]:
+                self.consecutive_turns = 0
+            elif self.current_action not in ["rotate_left", "rotate_right", "navigate_left", "navigate_right"]:
+                self.consecutive_turns = 1  # Starting a new turn sequence
+            else:
+                self.consecutive_turns += 1
+            
+            self.action_start_time = current_time
+            self.current_action = new_action
     
-    try:
-        node = AutonomousNavigationNode()
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        if 'node' in locals():
-            node.destroy_node()
-        rclpy.shutdown()
-
-if __name__ == '__main__':
-    main()
+    def is_stuck(self):
+        """Detect if robot is stuck in a pattern or spinning"""
+        current_time = time.time()
+        
+        # Check if we've been turning too long consecutively
+        if self.consecutive_turns >= self.max_consecutive_turns:
+            self.get_logger().warning(f"Detected excessive turning: {self.consecutive_turns} consecutive turns")
+            return True, "excessive_turning"
+        
+        # Check if current action has been running too long
+        action_duration = current_time - self.action_start_time
+        if action_duration > self.stuck_detection_time:
+            if self.current_action in ["rotate_left", "rotate_right", "navigate_left", "navigate_right"]:
+                self.get_logger().warning(f"Stuck in {self.current_action} for {action_duration:.1f}s")
+                return True, "stuck_turning"
+        
+        # Analyze recent action pattern for oscillation
+        if len(self.action_history) >= 4:
+            recent_actions = [h['action'] for h in self.action_history[-4:]]
+            
+            # Check for left-right oscillation pattern
+            if (recent_actions.count("rotate_left") >= 2 and recent_actions.count("rotate_right") >= 2) or \
+               (recent_actions.count("navigate_left") >= 2 and recent_actions.count("navigate_right") >= 2):
+                self.get_logger().warning(f"Detected oscillation pattern: {recent_actions}")
+                return True, "oscillation"
+        
+        return False, "none"
+    
+    def execute_escape_behavior(self, stuck_reason):
+        """Execute escape behavior when stuck"""
+        current_time = time.time()
+        
+        # Start escape mode if not already in it
+        if not self.escape_mode:
+            self.escape_mode = True
+            self.escape_start_time = current_time
+            self.get_logger().info(f"Initiating escape behavior due to: {stuck_reason}")
+        
+        escape_duration = current_time - self.escape_start_time
+        
+        # Escape behavior sequence:
+        # 1. Back up for 2 seconds
+        # 2. Turn in preferred direction for 3 seconds 
+        # 3. Try to move forward
+        
+        if escape_duration < 2.0:
+            # Phase 1: Back up
+            if self.current_action != "escape_backward":
+                actual_speed = max(90, self.default_speed)
+                linear_speed = -(actual_speed / 100.0)
+                
+                if self.send_movement_command(linear_x=linear_speed):
+                    self.current_action = "escape_backward"
+                    self.get_logger().info(f"Escape: backing up at {actual_speed}% power")
+                    
+        elif escape_duration < 5.0:
+            # Phase 2: Turn (alternate direction from last escape)
+            if self.current_action != "escape_turn":
+                # Choose turn direction (alternate from last escape or prefer right)
+                if self.last_escape_direction == "left":
+                    turn_direction = "right"
+                    angular_speed = -0.90  # Right turn at 90%
+                else:
+                    turn_direction = "left"
+                    angular_speed = 0.90   # Left turn at 90%
+                
+                if self.send_movement_command(angular_z=angular_speed):
+                    self.current_action = "escape_turn"
+                    self.last_escape_direction = turn_direction
+                    self.get_logger().info(f"Escape: turning {turn_direction} at 90% power")
+                    
+        else:
+            # Phase 3: End escape mode and try forward
+            self.escape_mode = False
+            self.consecutive_turns = 0  # Reset turn counter
+            self.action_history = []    # Clear history to start fresh
+            
+            if self.current_action != "escape_forward":
+                actual_speed = max(90, self.default_speed)
+                linear_speed = actual_speed / 100.0
+                
+                if self.send_movement_command(linear_x=linear_speed):
+                    self.current_action = "escape_forward"
+                    self.get_logger().info(f"Escape complete: trying forward at {actual_speed}% power")
