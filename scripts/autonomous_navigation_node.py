@@ -728,16 +728,37 @@ class AutonomousNavigationNode(Node):
             }
         
         # Navigation decision details
+        current_time = time.time()
+        is_stuck, stuck_reason = self.is_stuck()
+        
         navigation_decision = {
             'current_action': self.current_action,
             'path_clear': self.path_clear,
             'obstacle_detected': self.obstacle_detected,
             'last_command_time': time.time() - self.last_command_time,
+            'action_duration': current_time - self.action_start_time,
             'speed_settings': {
                 'default_speed': f"{self.default_speed}%",
                 'rotation_speed': f"{self.rotation_speed}%",
                 'max_speed': f"{self.max_speed}%",
                 'minimum_power_rule': "90%"
+            }
+        }
+        
+        # Stuck detection status
+        stuck_detection = {
+            'is_stuck': is_stuck,
+            'stuck_reason': stuck_reason,
+            'escape_mode': self.escape_mode,
+            'consecutive_turns': self.consecutive_turns,
+            'max_consecutive_turns': self.max_consecutive_turns,
+            'action_history_length': len(self.action_history),
+            'recent_actions': [h['action'] for h in self.action_history[-5:]] if len(self.action_history) >= 5 else [h['action'] for h in self.action_history],
+            'escape_duration': current_time - self.escape_start_time if self.escape_mode else 0.0,
+            'last_escape_direction': self.last_escape_direction,
+            'detection_parameters': {
+                'stuck_detection_time': f"{self.stuck_detection_time}s",
+                'max_consecutive_turns': self.max_consecutive_turns
             }
         }
         
@@ -766,6 +787,7 @@ class AutonomousNavigationNode(Node):
             'timestamp': time.time(),
             'system_status': system_status,
             'navigation_decision': navigation_decision,
+            'stuck_detection': stuck_detection,
             'sensor_fusion': sensor_fusion,
             'lidar_analysis': lidar_debug,
             'depth_analysis': depth_debug,
