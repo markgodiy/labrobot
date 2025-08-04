@@ -103,7 +103,7 @@ class AutonomousNavigationNode(Node):
         
         # Post-escape forced forward mode
         self.post_escape_forward_time = None
-        self.post_escape_forward_duration = 3.0  # Force forward for 3 seconds after escape
+        self.post_escape_forward_duration = 4.0  # Force forward for 4 seconds after escape
         
         # Motor bridge service clients
         self.motor_stop_client = self.create_client(Trigger, '/motor/stop')
@@ -603,33 +603,48 @@ class AutonomousNavigationNode(Node):
             self.get_logger().info(f"Only {chosen_direction} available from sensors")
             return chosen_direction
         
-        # If both directions available, check recent history to avoid problematic patterns
-        recent_actions = [h['action'] for h in self.action_history[-10:]]  # Look at last 10 actions
-        left_count = len([a for a in recent_actions if "left" in a.lower()])
-        right_count = len([a for a in recent_actions if "right" in a.lower()])
+        # ANTI-STUCK LOGIC: Strong bias against directions that recently caused problems
+        recent_actions = [h['action'] for h in self.action_history[-8:]]  # Look at last 8 actions
+        left_recent = len([a for a in recent_actions if "left" in a.lower()])
+        right_recent = len([a for a in recent_actions if "right" in a.lower()])
         
-        # Strong bias against the direction that caused the last stuck state
-        # Check if we recently escaped and what direction dominated before escape
-        recent_escape_time = 30.0  # seconds
-        if hasattr(self, 'last_escape_time') and (time.time() - self.last_escape_time) < recent_escape_time:
-            if self.last_escape_direction:
+        # If we've been turning one direction a lot recently, FORCE the opposite
+        if left_recent >= 4 and "right" in available_directions:
+            self.get_logger().info(f"ANTI-STUCK: Forcing RIGHT turn (left used {left_recent} times recently)")
+            return "right"
+        elif right_recent >= 4 and "left" in available_directions:
+            self.get_logger().info(f"ANTI-STUCK: Forcing LEFT turn (right used {right_recent} times recently)")
+            return "left"
+        
+        # Post-escape bias: avoid the direction that got us stuck
+        if hasattr(self, 'last_escape_time') and (time.time() - self.last_escape_time) < 45.0:
+            if hasattr(self, 'last_escape_direction') and self.last_escape_direction:
                 opposite_direction = "right" if self.last_escape_direction == "left" else "left"
                 if opposite_direction in available_directions:
-                    self.get_logger().info(f"Post-escape bias: choosing {opposite_direction} (opposite of stuck direction {self.last_escape_direction})")
+                    self.get_logger().info(f"POST-ESCAPE: Choosing {opposite_direction} (avoiding stuck direction {self.last_escape_direction})")
                     return opposite_direction
         
-        # Default logic: prefer the direction we've used less recently
-        if left_count > right_count and "right" in available_directions:
-            chosen_direction = "right"
-            self.get_logger().info(f"Choosing right (left used {left_count} times recently vs right {right_count} times)")
-        elif right_count > left_count and "left" in available_directions:
-            chosen_direction = "left"
-            self.get_logger().info(f"Choosing left (right used {right_count} times recently vs left {left_count} times)")
-        else:
-            # Equal usage or no preference, use sensor priority (LIDAR over depth)
-            chosen_direction = lidar_direction if lidar_direction in available_directions else depth_direction
-            self.get_logger().info(f"Equal usage or no preference, using sensor priority: {chosen_direction}")
+        # Default: prefer alternating behavior
+        last_turn_direction = None
+        for action in reversed(self.action_history[-5:]):
+            if "rotate_" in action['action']:
+                if "left" in action['action']:
+                    last_turn_direction = "left"
+                    break
+                elif "right" in action['action']:
+                    last_turn_direction = "right"
+                    break
         
+        if last_turn_direction == "left" and "right" in available_directions:
+            self.get_logger().info("ALTERNATING: Last turn was left, choosing right")
+            return "right"
+        elif last_turn_direction == "right" and "left" in available_directions:
+            self.get_logger().info("ALTERNATING: Last turn was right, choosing left")
+            return "left"
+        
+        # If no pattern, prefer right (arbitrary but consistent choice)
+        chosen_direction = "right" if "right" in available_directions else "left"
+        self.get_logger().info(f"DEFAULT: Choosing {chosen_direction} (no clear pattern)")
         return chosen_direction
 
     def update_action_history(self, new_action):
@@ -668,20 +683,26 @@ class AutonomousNavigationNode(Node):
             self.get_logger().warning(f"Detected excessive turning: {self.consecutive_turns} consecutive turns")
             return True, "excessive_turning"
         
-        # Check if current action has been running too long
+        # Check if current action has been running too long (reduced time for faster detection)
         action_duration = current_time - self.action_start_time
-        if action_duration > self.stuck_detection_time:
+        if action_duration > 5.0:  # Reduced from 8 seconds to 5 seconds
             if self.current_action in ["rotate_left", "rotate_right", "navigate_left", "navigate_right"]:
                 self.get_logger().warning(f"Stuck in {self.current_action} for {action_duration:.1f}s")
                 return True, "stuck_turning"
         
-        # Analyze recent action pattern for oscillation
-        if len(self.action_history) >= 4:
-            recent_actions = [h['action'] for h in self.action_history[-4:]]
+        # More aggressive oscillation detection
+        if len(self.action_history) >= 3:
+            recent_actions = [h['action'] for h in self.action_history[-3:]]
             
-            # Check for left-right oscillation pattern
-            if (recent_actions.count("rotate_left") >= 2 and recent_actions.count("rotate_right") >= 2):
-                self.get_logger().warning(f"Detected oscillation pattern: {recent_actions}")
+            # Check for any repetitive turning pattern
+            left_turns = len([a for a in recent_actions if "left" in a.lower()])
+            right_turns = len([a for a in recent_actions if "right" in a.lower()])
+            
+            if left_turns >= 2 and right_turns >= 1:
+                self.get_logger().warning(f"Detected turning oscillation: {recent_actions}")
+                return True, "oscillation"
+            elif right_turns >= 2 and left_turns >= 1:
+                self.get_logger().warning(f"Detected turning oscillation: {recent_actions}")
                 return True, "oscillation"
         
         return False, "none"
@@ -694,17 +715,28 @@ class AutonomousNavigationNode(Node):
         if not self.escape_mode:
             self.escape_mode = True
             self.escape_start_time = current_time
+            
+            # Record what direction got us stuck for future avoidance
+            if "left" in self.current_action.lower():
+                self.problematic_direction = "left"
+            elif "right" in self.current_action.lower():
+                self.problematic_direction = "right"
+            else:
+                self.problematic_direction = None
+                
             self.get_logger().info(f"Initiating escape behavior due to: {stuck_reason}")
+            if hasattr(self, 'problematic_direction') and self.problematic_direction:
+                self.get_logger().info(f"Recording problematic direction: {self.problematic_direction}")
         
         escape_duration = current_time - self.escape_start_time
         
         # Escape behavior sequence:
-        # 1. Back up for 2 seconds
-        # 2. Turn in preferred direction for 3 seconds 
+        # 1. Back up for 2.5 seconds (longer backup)
+        # 2. Turn in preferred direction for 2.5 seconds 
         # 3. Try to move forward
         
-        if escape_duration < 2.0:
-            # Phase 1: Back up
+        if escape_duration < 2.5:
+            # Phase 1: Back up (longer backup)
             if self.current_action != "escape_backward":
                 actual_speed = max(90, self.default_speed)
                 linear_speed = -(actual_speed / 100.0)
@@ -714,15 +746,24 @@ class AutonomousNavigationNode(Node):
                     self.get_logger().info(f"Escape: backing up at {actual_speed}% power")
                     
         elif escape_duration < 5.0:
-            # Phase 2: Turn (alternate direction from last escape)
+            # Phase 2: Turn (choose opposite of problematic direction if known)
             if self.current_action != "escape_turn":
-                # Choose turn direction (alternate from last escape or prefer right)
-                if self.last_escape_direction == "left":
-                    turn_direction = "right"
-                    angular_speed = -0.90  # Right turn at 90%
+                if hasattr(self, 'problematic_direction') and self.problematic_direction:
+                    # Turn opposite to the problematic direction
+                    if self.problematic_direction == "left":
+                        turn_direction = "right"
+                        angular_speed = -0.90  # Right turn at 90%
+                    else:
+                        turn_direction = "left"
+                        angular_speed = 0.90   # Left turn at 90%
                 else:
-                    turn_direction = "left"
-                    angular_speed = 0.90   # Left turn at 90%
+                    # Fallback: alternate from last escape direction
+                    if self.last_escape_direction == "left":
+                        turn_direction = "right"
+                        angular_speed = -0.90
+                    else:
+                        turn_direction = "left"
+                        angular_speed = 0.90
                 
                 if self.send_movement_command(angular_z=angular_speed):
                     self.current_action = "escape_turn"
@@ -748,6 +789,7 @@ class AutonomousNavigationNode(Node):
                     
                     # Force a longer forward attempt after escape to avoid immediate re-stuck
                     self.post_escape_forward_time = time.time()
+                    self.post_escape_forward_duration = 4.0  # Increased to 4 seconds
 
 def main(args=None):
     rclpy.init(args=args)
