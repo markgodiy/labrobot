@@ -965,3 +965,21 @@ class AutonomousNavigationNode(Node):
                 if self.send_movement_command(linear_x=linear_speed):
                     self.current_action = "escape_forward"
                     self.get_logger().info(f"Escape complete: trying forward at {actual_speed}% power")
+
+def main(args=None):
+    rclpy.init(args=args)
+    
+    try:
+        node = AutonomousNavigationNode()
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        if 'node' in locals():
+            node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
