@@ -37,6 +37,7 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+
 # Install Python scripts as executables
 install(PROGRAMS
   scripts/serial_motor_bridge.py
@@ -47,6 +48,22 @@ install(PROGRAMS
   scripts/reset_emergency_stop.py
   scripts/robot_perception_monitor.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install Python launch files as executables
+install(PROGRAMS
+  launch/pi_launch.py
+  launch/pi.autonomous.launch.py
+  launch/pi.autonomous.serial.launch.py
+  launch/pi.basic.sensors.launch.py
+  launch/pi.cv.launch.py
+  launch/pi.full.launch.py
+  launch/pi.lidar.depthsensor.launch.py
+  launch/pi.lidar.launch.py
+  launch/rsp_gz.launch.py
+  launch/rsp.launch.py
+  launch/sim.launch.py
+  DESTINATION share/${PROJECT_NAME}/launch
 )
 
 # Install shell scripts
