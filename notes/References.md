@@ -31,3 +31,10 @@ https://github.com/dorssel/usbipd-win
 - Microsoft Docs: Connect USB devices to WSL 2
 https://learn.microsoft.com/en-us/windows/wsl/connect-usb
     - **Summary:** Official Microsoft documentation for connecting USB devices to Windows Subsystem for Linux (WSL 2). Explains requirements, setup, and usage of usbipd-win, with troubleshooting and security notes. Essential for anyone using USB hardware with WSL 2.
+
+
+- https://control.ros.org/jazzy/index.html
+
+sudo apt install ros-jazzy-ros2-control ros-jazzy-ros2-controllers
+
+sudo apt install ros-jazzy-gz-ros2-control ros-jazzy-gz-ros2-control-demos

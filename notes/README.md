@@ -4,7 +4,30 @@ A differential drive robot project using ROS 2 Jazzy and Gazebo Harmonic for sim
 
 ## Bill of Materials
 
-TODO: Add Bill of Materials (BOM) for the LabRobot project.
+### Motors and Drive System
+- **Motors**: 12V DC geared motors with built-in quadrature encoders
+  - Voltage: 12V
+  - Speed: 130 RPM (no load)
+  - Encoder Resolution: 3436 counts per revolution
+  - Wiring: 4 wires per motor (Power +/-, Encoder A, Encoder B)
+  - Precision: ~0.059mm per encoder pulse (with 65mm wheels)
+- **Motor Driver**: L298N dual H-bridge motor driver
+  - Handles up to 2A per channel
+  - PWM speed control via ENA/ENB pins
+  - Direction control via IN1/IN2 and IN3/IN4 pins
+- **Microcontroller**: Raspberry Pi Pico W (MicroPython)
+  - Motor control pins: ENA=Pin(2), IN1=Pin(3), IN2=Pin(4), ENB=Pin(8), IN3=Pin(6), IN4=Pin(7)
+  - Encoder pins: Left(9,10), Right(11,12)
+  - USB serial communication to main Pi
+
+### Sensors
+- **LIDAR**: Slamtec RPLIDAR A1M8 (or C1)
+- **Camera**: OAK-D Lite depth camera
+- **Main Computer**: Raspberry Pi 4/5
+
+### Additional Components
+- Wheels (65mm diameter assumed)
+- Chassis and mounting hardware
 
 ## 2025-07-04: Project Restart and Environment Setup
 
@@ -568,5 +591,47 @@ Software workarounds are **not sufficient** for this power issue. You need one o
 Get a powered USB 3.0 hub - this is the most reliable solution for OAK cameras on Raspberry Pi.
 
 **Next Steps:**
+Once hardware power issues are resolved, continue with depth camera integration for navigation.
+
+## 2025-08-03: Motor Encoder Integration
+
+### Encoder Feedback Implementation
+
+Added comprehensive encoder support to improve navigation beyond LIDAR/depth sensor limitations:
+
+**Hardware Specifications:**
+- Motors: 12V DC with built-in quadrature encoders (3436 counts/rev)
+- Resolution: ~0.059mm per encoder pulse (with 65mm wheels)
+- Expected encoder rate: ~7,458 pulses/second per motor at full 130 RPM
+
+**MicroPython Controller Updates:**
+- Added quadrature encoder reading on pins 9-12 (A/B channels for left/right)
+- Implemented real-time odometry calculation (distance, rotation)
+- Added encoder reset and data retrieval commands
+- Enhanced heartbeat messages to include encoder data
+- Movement tracking: records starting encoder positions for verification
+
+**Benefits for Navigation:**
+- **Movement Verification**: Detect if robot is actually moving vs. wheels spinning
+- **Precise Stuck Detection**: Compare expected vs. actual encoder movement
+- **Odometry Data**: Track actual distance traveled and rotation
+- **Closed-Loop Control**: Adjust commands based on actual movement feedback
+
+**Commands Added:**
+- `{"cmd": "reset_encoders"}` - Reset encoder counts to zero
+- `{"cmd": "get_encoders"}` - Get current encoder data and odometry
+- Heartbeat messages now include `encoder_data` field
+
+**Status:**
+- ✅ MicroPython controller updated with encoder support
+- ✅ Encoder parameters configured (3436 CPR, L298N driver)
+- ✅ ROS 2 control packages installed
+- 🔄 **Next**: Update ROS 2 serial bridge and navigation node to use encoder feedback
+
+**Integration Plan:**
+1. Update serial bridge to publish odometry data from encoders
+2. Update navigation node to subscribe to encoder data
+3. Implement encoder-based stuck detection and movement verification
+4. Test real-world navigation improvements
 
 

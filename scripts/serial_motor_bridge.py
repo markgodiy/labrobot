@@ -5,11 +5,12 @@ Serial Motor Controller Bridge for MicroPython
 
 This node provides a bridge between ROS 2 and the MicroPython motor controller
 via USB serial communication. It translates ROS 2 service calls and topics
-into JSON commands sent over serial.
+into JSON commands sent over serial, and publishes encoder/odometry data.
 
 Features:
 - Serial communication with MicroPython controller
 - ROS 2 service interfaces for motor control
+- Encoder data and odometry publishing
 - Status monitoring and publishing
 - Error handling and reconnection
 - Thread-safe serial communication
@@ -19,12 +20,14 @@ Services:
 - /motor/rotate (custom service): Rotate robot  
 - /motor/stop (std_srvs/Trigger): Stop movement
 - /motor/emergency_stop (std_srvs/Trigger): Emergency stop
-- /motor/reset_emergency_stop (std_srvs/Trigger): Reset emergency stop
 - /motor/set_autonomous_mode (std_srvs/SetBool): Set autonomous mode
+- /motor/reset_emergency_stop (std_srvs/Trigger): Reset emergency stop
 
 Topics:
 - /motor_controller/status (std_msgs/String): Controller status
 - /motor_controller/logs (std_msgs/String): Controller log messages
+- /motor_controller/encoder_data (std_msgs/String): Raw encoder data
+- /odom (nav_msgs/Odometry): Robot odometry from encoders
 """
 
 import rclpy
@@ -33,11 +36,14 @@ import serial
 import json
 import threading
 import time
+import math
 from threading import Lock
 # Standard ROS 2 service and message imports
 from std_srvs.srv import Trigger, SetBool
-from std_msgs.msg import String
-from geometry_msgs.msg import Twist
+from std_msgs.msg import String, Header
+from geometry_msgs.msg import Twist, Point, Pose, Quaternion, Vector3
+from nav_msgs.msg import Odometry
+import tf_transformations
 
 class SerialMotorBridge(Node):
     def __init__(self):
@@ -63,6 +69,16 @@ class SerialMotorBridge(Node):
         # Publishers
         self.status_publisher = self.create_publisher(String, '/motor_controller/status', 10)
         self.log_publisher = self.create_publisher(String, '/motor_controller/logs', 10)
+        self.encoder_data_publisher = self.create_publisher(String, '/motor_controller/encoder_data', 10)
+        self.odom_publisher = self.create_publisher(Odometry, '/odom', 10)
+        
+        # Odometry tracking
+        self.odom_x = 0.0
+        self.odom_y = 0.0
+        self.odom_theta = 0.0
+        self.last_encoder_time = time.time()
+        self.last_left_distance = 0.0
+        self.last_right_distance = 0.0
         
         # Services
         self.stop_service = self.create_service(Trigger, '/motor/stop', self.handle_stop)
@@ -308,21 +324,6 @@ class SerialMotorBridge(Node):
         
         return response
     
-    def handle_reset_emergency_stop(self, request, response):
-        """Handle reset emergency stop service call"""
-        result = self.send_command({"cmd": "reset_estop"})
-        
-        if result and result.get("status") == "ok":
-            response.success = True
-            response.message = result.get("message", "Emergency stop reset")
-            self.get_logger().info("EMERGENCY STOP RESET")
-        else:
-            response.success = False
-            response.message = "Failed to reset emergency stop"
-            self.get_logger().error("Failed to reset emergency stop")
-        
-        return response
-    
     def handle_autonomous_mode(self, request, response):
         """Handle autonomous mode service call"""
         mode = "on" if request.data else "off"
@@ -355,8 +356,7 @@ class SerialMotorBridge(Node):
             })
         elif abs(angular_z) > 0.1:  # Rotation
             direction = "left" if angular_z > 0 else "right"
-            speed = min(100, int(abs(angular_z) * 100))  # Scale to percentage (was 50, now 100)
-            self.get_logger().info(f"Twist rotation: angular_z={angular_z:.3f}, direction={direction}, speed={speed}")
+            speed = min(100, int(abs(angular_z) * 50))  # Scale to percentage
             self.send_command_async({
                 "cmd": "rotate",
                 "dir": direction,

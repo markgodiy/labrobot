@@ -54,6 +54,121 @@ in4 = Pin(7, Pin.OUT)   # Right motor direction 2
 enb_pwm = PWM(Pin(8))   # Right motor enable
 enb_pwm.freq(1000)
 
+# Encoder setup (assuming quadrature encoders)
+# Left encoder pins
+left_encoder_a = Pin(9, Pin.IN, Pin.PULL_UP)
+left_encoder_b = Pin(10, Pin.IN, Pin.PULL_UP)
+
+# Right encoder pins
+right_encoder_a = Pin(11, Pin.IN, Pin.PULL_UP)
+right_encoder_b = Pin(12, Pin.IN, Pin.PULL_UP)
+
+# Encoder state tracking
+class EncoderState:
+    def __init__(self):
+        self.left_count = 0
+        self.right_count = 0
+        self.left_last_a = left_encoder_a.value()
+        self.left_last_b = left_encoder_b.value()
+        self.right_last_a = right_encoder_a.value()
+        self.right_last_b = right_encoder_b.value()
+        
+        # Encoder parameters (based on your motor specifications)
+        self.pulses_per_revolution = 3436  # Your motors: 3436 counts per revolution
+        self.wheel_diameter_mm = 65        # Adjust for your wheels
+        self.wheel_circumference_mm = 3.14159 * self.wheel_diameter_mm
+        self.mm_per_pulse = self.wheel_circumference_mm / self.pulses_per_revolution
+        
+        # Odometry tracking
+        self.total_distance_mm = 0
+        self.total_rotation_rad = 0
+        self.wheel_base_mm = 150  # Distance between wheels (adjust for your robot)
+        
+        # Speed tracking (for debugging)
+        self.last_update_time = ticks_ms()
+        self.left_speed_pulses_per_sec = 0
+        self.right_speed_pulses_per_sec = 0
+        
+encoder_state = EncoderState()
+
+def update_left_encoder():
+    """Update left encoder count based on quadrature signals"""
+    global encoder_state
+    a_val = left_encoder_a.value()
+    b_val = left_encoder_b.value()
+    
+    if a_val != encoder_state.left_last_a:  # A channel changed
+        if a_val != b_val:
+            encoder_state.left_count += 1  # Forward
+        else:
+            encoder_state.left_count -= 1  # Backward
+        encoder_state.left_last_a = a_val
+    
+    if b_val != encoder_state.left_last_b:  # B channel changed
+        if a_val == b_val:
+            encoder_state.left_count += 1  # Forward
+        else:
+            encoder_state.left_count -= 1  # Backward
+        encoder_state.left_last_b = b_val
+
+def update_right_encoder():
+    """Update right encoder count based on quadrature signals"""
+    global encoder_state
+    a_val = right_encoder_a.value()
+    b_val = right_encoder_b.value()
+    
+    if a_val != encoder_state.right_last_a:  # A channel changed
+        if a_val == b_val:  # Right wheel is reversed relative to left
+            encoder_state.right_count += 1  # Forward
+        else:
+            encoder_state.right_count -= 1  # Backward
+        encoder_state.right_last_a = a_val
+    
+    if b_val != encoder_state.right_last_b:  # B channel changed
+        if a_val != b_val:  # Right wheel is reversed relative to left
+            encoder_state.right_count += 1  # Forward
+        else:
+            encoder_state.right_count -= 1  # Backward
+        encoder_state.right_last_b = b_val
+
+def calculate_odometry():
+    """Calculate robot position and orientation from encoder data"""
+    global encoder_state
+    
+    # Calculate distance traveled by each wheel
+    left_distance_mm = encoder_state.left_count * encoder_state.mm_per_pulse
+    right_distance_mm = encoder_state.right_count * encoder_state.mm_per_pulse
+    
+    # Calculate robot movement
+    center_distance_mm = (left_distance_mm + right_distance_mm) / 2.0
+    rotation_rad = (right_distance_mm - left_distance_mm) / encoder_state.wheel_base_mm
+    
+    encoder_state.total_distance_mm = center_distance_mm
+    encoder_state.total_rotation_rad = rotation_rad
+    
+    return {
+        "left_distance_mm": left_distance_mm,
+        "right_distance_mm": right_distance_mm,
+        "center_distance_mm": center_distance_mm,
+        "rotation_rad": rotation_rad,
+        "left_count": encoder_state.left_count,
+        "right_count": encoder_state.right_count
+    }
+
+def reset_encoders():
+    """Reset encoder counts to zero"""
+    global encoder_state
+    encoder_state.left_count = 0
+    encoder_state.right_count = 0
+    encoder_state.total_distance_mm = 0
+    encoder_state.total_rotation_rad = 0
+
+# Set up encoder interrupts
+left_encoder_a.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=lambda pin: update_left_encoder())
+left_encoder_b.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=lambda pin: update_left_encoder())
+right_encoder_a.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=lambda pin: update_right_encoder())
+right_encoder_b.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=lambda pin: update_right_encoder())
+
 # Serial communication setup
 # USB serial is automatically configured, using sys.stdin/stdout
 serial_buffer = ""
@@ -77,6 +192,12 @@ class NavigationState:
         self.move_duration = 0
         self.rotation_start_time = 0
         self.rotation_duration = 0
+        
+        # Encoder tracking for movement verification
+        self.move_start_left_count = 0
+        self.move_start_right_count = 0
+        self.expected_distance_mm = 0
+        self.expected_rotation_rad = 0
         
         # Monitoring and diagnostics
         self.total_commands_received = 0
@@ -134,11 +255,14 @@ def log_error(message, error_type="GENERAL"):
 
 def send_heartbeat():
     """Send periodic heartbeat with system status"""
-    global nav_state
+    global nav_state, encoder_state
     current_time = ticks_ms()
     
     if ticks_diff(current_time, nav_state.last_heartbeat_time) >= nav_state.heartbeat_interval_ms:
         nav_state.last_heartbeat_time = current_time
+        
+        # Get current encoder data
+        odometry_data = calculate_odometry()
         
         heartbeat_data = {
             "type": "heartbeat",
@@ -150,7 +274,8 @@ def send_heartbeat():
             "commands_received": nav_state.total_commands_received,
             "total_errors": nav_state.total_errors,
             "serial_errors": nav_state.serial_read_errors,
-            "json_errors": nav_state.json_parse_errors
+            "json_errors": nav_state.json_parse_errors,
+            "encoder_data": odometry_data
         }
         
         send_serial_response(heartbeat_data)
@@ -208,7 +333,7 @@ def right_motor_stop():
 # Navigation commands
 def move_forward(speed=60, duration=0):
     """Move forward at specified speed"""
-    global nav_state
+    global nav_state, encoder_state
     if nav_state.emergency_stop_active:
         return False
     
@@ -216,6 +341,12 @@ def move_forward(speed=60, duration=0):
     nav_state.is_moving = True
     nav_state.move_start_time = ticks_ms()
     nav_state.move_duration = duration * 1000 if duration > 0 else 0
+    
+    # Record starting encoder positions for movement verification
+    nav_state.move_start_left_count = encoder_state.left_count
+    nav_state.move_start_right_count = encoder_state.right_count
+    nav_state.expected_distance_mm = 0  # Will be calculated based on actual movement
+    nav_state.expected_rotation_rad = 0
     
     ramp_to_speed(pwm_speed, left_motor_forward, right_motor_forward)
     led.on()  # LED on during movement
@@ -223,7 +354,7 @@ def move_forward(speed=60, duration=0):
 
 def move_backward(speed=60, duration=0):
     """Move backward at specified speed"""
-    global nav_state
+    global nav_state, encoder_state
     if nav_state.emergency_stop_active:
         return False
     
@@ -232,13 +363,19 @@ def move_backward(speed=60, duration=0):
     nav_state.move_start_time = ticks_ms()
     nav_state.move_duration = duration * 1000 if duration > 0 else 0
     
+    # Record starting encoder positions for movement verification
+    nav_state.move_start_left_count = encoder_state.left_count
+    nav_state.move_start_right_count = encoder_state.right_count
+    nav_state.expected_distance_mm = 0  # Will be calculated based on actual movement
+    nav_state.expected_rotation_rad = 0
+    
     ramp_to_speed(pwm_speed, left_motor_backward, right_motor_backward)
     led.on()  # LED on during movement
     return True
 
 def rotate_left(speed=50, duration=0):
     """Rotate left (counter-clockwise)"""
-    global nav_state
+    global nav_state, encoder_state
     if nav_state.emergency_stop_active:
         return False
     
@@ -246,6 +383,12 @@ def rotate_left(speed=50, duration=0):
     nav_state.is_moving = True
     nav_state.rotation_start_time = ticks_ms()
     nav_state.rotation_duration = duration * 1000 if duration > 0 else 0
+    
+    # Record starting encoder positions for rotation verification
+    nav_state.move_start_left_count = encoder_state.left_count
+    nav_state.move_start_right_count = encoder_state.right_count
+    nav_state.expected_distance_mm = 0
+    nav_state.expected_rotation_rad = 0  # Will be calculated based on actual rotation
     
     ramp_to_speed(pwm_speed, left_motor_backward, right_motor_forward)
     led.on()  # LED on during movement
@@ -253,7 +396,7 @@ def rotate_left(speed=50, duration=0):
 
 def rotate_right(speed=50, duration=0):
     """Rotate right (clockwise)"""
-    global nav_state
+    global nav_state, encoder_state
     if nav_state.emergency_stop_active:
         return False
     
@@ -261,6 +404,12 @@ def rotate_right(speed=50, duration=0):
     nav_state.is_moving = True
     nav_state.rotation_start_time = ticks_ms()
     nav_state.rotation_duration = duration * 1000 if duration > 0 else 0
+    
+    # Record starting encoder positions for rotation verification
+    nav_state.move_start_left_count = encoder_state.left_count
+    nav_state.move_start_right_count = encoder_state.right_count
+    nav_state.expected_distance_mm = 0
+    nav_state.expected_rotation_rad = 0  # Will be calculated based on actual rotation
     
     ramp_to_speed(pwm_speed, left_motor_forward, right_motor_backward)
     led.on()  # LED on during movement
@@ -524,8 +673,16 @@ def process_serial_command(command_dict):
         elif cmd == 'ping':
             return {"status": "ok", "message": "pong", "timestamp": ticks_ms(), "command_id": nav_state.total_commands_received}
         
+        elif cmd == 'reset_encoders':
+            reset_encoders()
+            return {"status": "ok", "message": "Encoders reset", "command_id": nav_state.total_commands_received}
+        
+        elif cmd == 'get_encoders':
+            odometry_data = calculate_odometry()
+            return {"status": "ok", "message": "Encoder data", "encoder_data": odometry_data, "command_id": nav_state.total_commands_received}
+        
         else:
-            return {"status": "error", "message": f"Unknown command: {cmd}", "available_commands": ["move", "rotate", "stop", "estop", "reset_estop", "autonomous", "status", "diagnostics", "wifi", "ping"]}
+            return {"status": "error", "message": f"Unknown command: {cmd}", "available_commands": ["move", "rotate", "stop", "estop", "reset_estop", "autonomous", "status", "diagnostics", "wifi", "ping", "reset_encoders", "get_encoders"]}
     
     except Exception as e:
         log_error(f"Command processing error: {e}", "COMMAND_PROCESSING")
