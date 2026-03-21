@@ -106,6 +106,21 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .stale { opacity: .35; }
   hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
   footer { font-size: .7rem; color: var(--muted); text-align: right; margin-top: 14px; }
+  /* tooltips */
+  .tip { position: relative; cursor: help; text-decoration: underline dotted; text-underline-offset: 3px; }
+  .tip::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 7px); left: 0;
+    background: #1e2130; color: #e2e8f0;
+    font-size: .72rem; line-height: 1.4;
+    padding: 6px 9px; border-radius: 7px;
+    border: 1px solid #3a3f5c;
+    width: max-content; max-width: 230px; white-space: normal;
+    pointer-events: none; opacity: 0;
+    transition: opacity .15s ease; z-index: 20;
+    box-shadow: 0 4px 12px rgba(0,0,0,.5);
+  }
+  .tip:hover::after { opacity: 1; }
 </style>
 </head>
 <body>
@@ -119,39 +134,39 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <!-- Odometry -->
   <div class="card">
     <div class="card-title">Odometry</div>
-    <div class="row"><span class="lbl">X</span>      <span><span class="val" id="ox">—</span><span class="unit">m</span></span></div>
-    <div class="row"><span class="lbl">Y</span>      <span><span class="val" id="oy">—</span><span class="unit">m</span></span></div>
-    <div class="row"><span class="lbl">Heading</span><span><span class="val" id="oh">—</span><span class="unit">deg</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Distance traveled left/right from the start point (0 = where the robot booted)">X</span>      <span><span class="val" id="ox">—</span><span class="unit">m</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Distance traveled forward/backward from the start point">Y</span>      <span><span class="val" id="oy">—</span><span class="unit">m</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Which direction the robot is facing. 0° = forward at boot, +90° = turned left, -90° = turned right">Heading</span><span><span class="val" id="oh">—</span><span class="unit">deg</span></span></div>
     <hr>
-    <div class="row"><span class="lbl">Linear vel</span> <span><span class="val" id="ovx">—</span><span class="unit">m/s</span></span></div>
-    <div class="row"><span class="lbl">Angular vel</span><span><span class="val" id="owz">—</span><span class="unit">rad/s</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Forward/backward speed. Positive = moving forward, negative = reversing">Linear vel</span> <span><span class="val" id="ovx">—</span><span class="unit">m/s</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Rotation speed. Positive = turning left, negative = turning right">Angular vel</span><span><span class="val" id="owz">—</span><span class="unit">rad/s</span></span></div>
   </div>
 
   <!-- Encoders + bridge -->
   <div class="card">
     <div class="card-title">Encoders</div>
-    <div class="row"><span class="lbl">Left count</span> <span><span class="val" id="el">—</span><span class="unit">ticks</span></span></div>
-    <div class="row"><span class="lbl">Right count</span><span><span class="val" id="er">—</span><span class="unit">ticks</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Cumulative encoder ticks from the left wheel since boot. Used to calculate odometry. 3436 ticks = 1 full wheel rotation.">Left count</span> <span><span class="val" id="el">—</span><span class="unit">ticks</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Cumulative encoder ticks from the right wheel since boot. Used to calculate odometry. 3436 ticks = 1 full wheel rotation.">Right count</span><span><span class="val" id="er">—</span><span class="unit">ticks</span></span></div>
     <hr>
-    <div class="row"><span class="lbl">Bridge</span><span class="val" id="bridge">—</span></div>
-    <div class="row"><span class="lbl">E-Stop</span><span class="val" id="estop">—</span></div>
+    <div class="row"><span class="lbl tip" data-tip="Whether serial_motor_bridge.py is running and communicating with the Pico over USB serial. All motor commands and sensor data flow through this bridge.">Bridge</span><span class="val" id="bridge">—</span></div>
+    <div class="row"><span class="lbl tip" data-tip="Emergency stop state on the Pico. OK = motors are allowed to run. ACTIVE = all motor commands are blocked until reset. Call /motor/reset_emergency_stop to clear.">E-Stop</span><span class="val" id="estop">—</span></div>
   </div>
 
   <!-- Battery -->
   <div class="card">
     <div class="card-title">Battery (INA219)</div>
-    <div class="row"><span class="lbl">Voltage</span><span><span class="val big" id="bv">—</span><span class="unit">V</span></span></div>
-    <div class="row"><span class="lbl">Current</span><span><span class="val" id="bi">—</span><span class="unit">mA</span></span></div>
-    <div class="row"><span class="lbl">Power</span>  <span><span class="val" id="bp">—</span><span class="unit">mW</span></span></div>
-    <div class="row"><span class="lbl">Charge</span> <span><span class="val" id="bsoc">—</span><span class="unit">%</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Pack voltage measured by INA219. Green ≥12V (healthy), yellow ≥11V (low), red &lt;11V (critical — recharge now). Full charge ≈ 13.2V for 3S LiPo.">Voltage</span><span><span class="val big" id="bv">—</span><span class="unit">V</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Total current draw of the whole robot (Pi + motors + sensors) in milliamps. High values when motors are running.">Current</span><span><span class="val" id="bi">—</span><span class="unit">mA</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Instantaneous power consumption (voltage × current). Gives a sense of total load on the battery.">Power</span>  <span><span class="val" id="bp">—</span><span class="unit">mW</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="Estimated charge remaining based on voltage thresholds. Not a coulomb counter — accuracy depends on battery chemistry matching the lookup table in firmware.">Charge</span> <span><span class="val" id="bsoc">—</span><span class="unit">%</span></span></div>
   </div>
 
   <!-- System -->
   <div class="card">
     <div class="card-title">Pi System</div>
-    <div class="row"><span class="lbl">CPU temp</span><span><span class="val" id="ct">—</span><span class="unit">°C</span></span></div>
-    <div class="row"><span class="lbl">Memory</span> <span class="val" id="mem">—</span></div>
-    <div class="row"><span class="lbl">Uptime</span> <span class="val" id="up">—</span></div>
+    <div class="row"><span class="lbl tip" data-tip="Raspberry Pi CPU temperature. Green &lt;60°C (normal), yellow &lt;75°C (warm), red ≥75°C (throttling likely). Typical idle ≈ 35–45°C.">CPU temp</span><span><span class="val" id="ct">—</span><span class="unit">°C</span></span></div>
+    <div class="row"><span class="lbl tip" data-tip="RAM used out of total. Camera, point cloud processing, and ROS 2 DDS typically use 600–900 MB combined.">Memory</span> <span class="val" id="mem">—</span></div>
+    <div class="row"><span class="lbl tip" data-tip="Time since last boot. Resets to 0 on power cycle or reboot.">Uptime</span> <span class="val" id="up">—</span></div>
   </div>
 
 </div>
