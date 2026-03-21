@@ -33,7 +33,7 @@ _metrics: dict = {
     "bridge_connected": False,
     "odom":     {"x": 0.0, "y": 0.0, "heading_deg": 0.0, "vx": 0.0, "wz": 0.0, "ts": 0},
     "encoders": {"left": 0, "right": 0, "ts": 0},
-    "battery":  {"voltage": None, "current_mA": None, "power_mW": None, "ts": 0},
+    "battery":  {"voltage": None, "current_mA": None, "power_mW": None, "soc_pct": None, "ts": 0},
     "status":   {"emergency_stop": None, "ts": 0},
     "system":   {"cpu_temp_c": None, "mem_used_mb": None, "mem_total_mb": None, "uptime_s": 0},
 }
@@ -143,6 +143,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <div class="row"><span class="lbl">Voltage</span><span><span class="val big" id="bv">—</span><span class="unit">V</span></span></div>
     <div class="row"><span class="lbl">Current</span><span><span class="val" id="bi">—</span><span class="unit">mA</span></span></div>
     <div class="row"><span class="lbl">Power</span>  <span><span class="val" id="bp">—</span><span class="unit">mW</span></span></div>
+    <div class="row"><span class="lbl">Charge</span> <span><span class="val" id="bsoc">—</span><span class="unit">%</span></span></div>
   </div>
 
   <!-- System -->
@@ -207,9 +208,10 @@ async function poll() {
 
     // battery
     const b = d.battery;
-    $('bv').textContent = b.voltage    != null ? fmt(b.voltage, 2)    : '—';
-    $('bi').textContent = b.current_mA != null ? fmt(b.current_mA, 0) : '—';
-    $('bp').textContent = b.power_mW   != null ? fmt(b.power_mW, 0)   : '—';
+    $('bv').textContent   = b.voltage    != null ? fmt(b.voltage, 2)    : '—';
+    $('bi').textContent   = b.current_mA != null ? fmt(b.current_mA, 0) : '—';
+    $('bp').textContent   = b.power_mW   != null ? fmt(b.power_mW, 0)   : '—';
+    $('bsoc').textContent = b.soc_pct    != null ? b.soc_pct            : '—';
     const vc = b.voltage == null ? '' : b.voltage < 11 ? 'red' : b.voltage < 12 ? 'yellow' : 'green';
     $('bv').className = 'val big ' + vc;
     stale($('bv'), b.ts, 20);
@@ -293,12 +295,15 @@ class RobotDashboardNode(Node):
             if estop is not None:
                 _metrics['status']['emergency_stop'] = estop
                 _metrics['status']['ts'] = now
-            # battery may arrive as 'batt' or 'battery' sub-dict
-            batt = data.get('batt') or data.get('battery')
-            if batt:
+            # battery arrives as 'battery' sub-dict in status/heartbeat
+            batt = data.get('battery') or data.get('batt')
+            if batt and 'bus_voltage' in batt:
+                current_a = batt.get('current_draw_amp')
+                power_w   = batt.get('current_draw_watt')
                 _metrics['battery']['voltage']    = batt.get('bus_voltage')
-                _metrics['battery']['current_mA'] = batt.get('current_mA') or batt.get('current')
-                _metrics['battery']['power_mW']   = batt.get('power_mW')   or batt.get('power')
+                _metrics['battery']['current_mA'] = round(current_a * 1000, 1) if current_a is not None else None
+                _metrics['battery']['power_mW']   = round(power_w   * 1000, 1) if power_w   is not None else None
+                _metrics['battery']['soc_pct']    = batt.get('batt_charge_percent')
                 _metrics['battery']['ts'] = now
 
     def _on_encoders(self, msg: String):
