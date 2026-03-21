@@ -26,7 +26,7 @@ def generate_launch_description():
     node_robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        output='screen',
+        output='log',
         parameters=[{
             'robot_description': robot_description_config.toxml(),
             'use_sim_time': use_sim_time
@@ -38,7 +38,7 @@ def generate_launch_description():
         package='joint_state_publisher',
         executable='joint_state_publisher',
         name='joint_state_publisher',
-        output='screen',
+        output='log',
         parameters=[{
             'robot_description': robot_description_config.toxml(),
             'use_sim_time': use_sim_time
@@ -97,7 +97,7 @@ def generate_launch_description():
             {'scan_mode': scan_mode},
             {'use_sim_time': use_sim_time}
         ],
-        output='screen'
+        output='log'
     )
 
     # OAK-D Lite Camera configuration - Optimized for computer vision and streaming
@@ -147,7 +147,7 @@ def generate_launch_description():
             'stereo.i_low_bandwidth': False,
             'rgb.i_keep_preview_aspect_ratio': True,
         }],
-        output='screen'
+        output='log'
     )
 
     # Computer Vision Processing Container
@@ -220,7 +220,7 @@ def generate_launch_description():
                 }]
             ),
         ],
-        output='screen',
+        output='log',
     )
 
     # Image transport republishers for different compression formats and easier RViz access

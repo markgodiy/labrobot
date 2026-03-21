@@ -141,18 +141,17 @@ class SerialMotorBridge(Node):
             self.ser.reset_input_buffer()
             self.ser.reset_output_buffer()
             
-            self.connected = True
-            self.get_logger().info(f"Connected to {self.serial_port}")
-            
-            # Give MicroPython more time to start and settle
+            # Give MicroPython time to settle before marking as connected
             time.sleep(2.0)
             
-            # Clear any startup messages
+            # Clear startup messages that arrived during the wait
             self.ser.reset_input_buffer()
             
-            # Send initial ping to verify connection
+            # Verify connection with a ping before accepting service calls
+            self.connected = True
+            self.get_logger().info(f"Connected to {self.serial_port}")
             response = self.send_command({"cmd": "status"}, timeout=3.0)
-            if response and response.get("status") == "ok":
+            if response and (response.get("type") == "status" or response.get("status") == "ok"):
                 self.get_logger().info("MicroPython controller responded successfully")
             else:
                 self.get_logger().warn("No valid response from MicroPython controller")
@@ -195,6 +194,9 @@ class SerialMotorBridge(Node):
                             if line and line.startswith('{') and line.endswith('}'):
                                 try:
                                     response = json.loads(line)
+                                    # Skip async push messages — keep reading for the command response
+                                    if response.get("type") in ("log", "heartbeat", "battery"):
+                                        continue
                                     return response
                                 except json.JSONDecodeError as e:
                                     self.get_logger().warn(f"JSON decode error: {e} for line: {line}")

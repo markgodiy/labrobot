@@ -3,6 +3,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.substitutions import LaunchConfiguration
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition
 from launch_ros.actions import Node, ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
 import xacro
@@ -26,7 +27,7 @@ def generate_launch_description():
     node_robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        output='screen',
+        output='log',
         parameters=[{
             'robot_description': robot_description_config.toxml(),
             'use_sim_time': use_sim_time
@@ -38,7 +39,7 @@ def generate_launch_description():
         package='joint_state_publisher',
         executable='joint_state_publisher',
         name='joint_state_publisher',
-        output='screen',
+        output='log',
         parameters=[{
             'robot_description': robot_description_config.toxml(),
             'use_sim_time': use_sim_time
@@ -91,11 +92,14 @@ def generate_launch_description():
             {'scan_mode': scan_mode},
             {'use_sim_time': use_sim_time}
         ],
-        output='screen'
+        output='log'
     )
 
     # OAK-D Lite Camera configuration - Following official depthai-ros documentation
+    enable_camera = LaunchConfiguration("enable_camera")
+
     oak_camera = Node(
+        condition=IfCondition(enable_camera),
         package='depthai_ros_driver',
         executable='camera_node',
         name='oak',  # Standard name following depthai-ros conventions
@@ -134,12 +138,13 @@ def generate_launch_description():
             'rgb.i_low_bandwidth': False,  # Keep quality up for point cloud processing
             'stereo.i_low_bandwidth': False,
         }],
-        output='screen'
+        output='log'
     )
 
     # RGB Point Cloud Processing Container for RGB overlay on point cloud
     # This creates colored point clouds by combining RGB and depth images
     point_cloud_container = ComposableNodeContainer(
+        condition=IfCondition(enable_camera),
         name='point_cloud_container',
         namespace='',
         package='rclcpp_components',
@@ -174,11 +179,12 @@ def generate_launch_description():
                 }]
             ),
         ],
-        output='screen',
+        output='log',
     )
 
     # Optional: Image republishers for easier RViz access
     rgb_republisher = Node(
+        condition=IfCondition(enable_camera),
         package='image_transport',
         executable='republish',
         name='rgb_republisher',
@@ -191,6 +197,7 @@ def generate_launch_description():
     )
 
     depth_republisher = Node(
+        condition=IfCondition(enable_camera),
         package='image_transport',
         executable='republish',
         name='depth_republisher',
@@ -208,6 +215,7 @@ def generate_launch_description():
 
     # Launch!
     return LaunchDescription([
+        DeclareLaunchArgument('enable_camera', default_value='true', description='Launch OAK-D Lite camera and point cloud nodes'),
         DeclareLaunchArgument(
             'use_sim_time',
             default_value='false',

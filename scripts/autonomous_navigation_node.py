@@ -53,6 +53,7 @@ class AutonomousNavigationNode(Node):
         # Declare parameters
         self.declare_parameter('serial_port', '/dev/ttyACM0')
         self.declare_parameter('min_obstacle_distance', 0.5)  # meters
+        self.declare_parameter('lidar_min_range', 0.25)  # meters — ignore cage/chassis below this distance
         self.declare_parameter('max_speed', 70)  # percentage
         self.declare_parameter('default_speed', 90)  # percentage (90% minimum for effective movement)
         self.declare_parameter('rotation_speed', 90)  # percentage (90% minimum for effective turning)
@@ -68,6 +69,7 @@ class AutonomousNavigationNode(Node):
         self.default_speed = self.get_parameter('default_speed').value
         self.rotation_speed = self.get_parameter('rotation_speed').value
         self.scan_angle_range = self.get_parameter('scan_angle_range').value
+        self.lidar_min_range = self.get_parameter('lidar_min_range').value
         self.depth_obstacle_threshold = self.get_parameter('depth_obstacle_threshold').value
         self.command_timeout = self.get_parameter('command_timeout').value
         self.autonomous_enabled = self.get_parameter('autonomous_enabled').value
@@ -297,7 +299,7 @@ class AutonomousNavigationNode(Node):
         
         # Get distances in front range
         front_ranges = scan_msg.ranges[start_idx:end_idx]
-        valid_ranges = [r for r in front_ranges if scan_msg.range_min < r < scan_msg.range_max]
+        valid_ranges = [r for r in front_ranges if self.lidar_min_range < r < scan_msg.range_max]
         
         if not valid_ranges:
             return True, 0.0, "no_valid_data"
@@ -325,8 +327,8 @@ class AutonomousNavigationNode(Node):
                 direction = "right"
             elif left_clear and right_clear:
                 # Choose based on average distance
-                left_avg = np.mean([r for r in left_ranges if scan_msg.range_min < r < scan_msg.range_max])
-                right_avg = np.mean([r for r in right_ranges if scan_msg.range_min < r < scan_msg.range_max])
+                left_avg = np.mean([r for r in left_ranges if self.lidar_min_range < r < scan_msg.range_max])
+                right_avg = np.mean([r for r in right_ranges if self.lidar_min_range < r < scan_msg.range_max])
                 direction = "left" if left_avg > right_avg else "right"
             else:
                 direction = "backward"

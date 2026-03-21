@@ -20,6 +20,8 @@ Parameters:
   - default_speed: Default motor speed percentage (default: 90, minimum for effective movement)
   - rotation_speed: Rotation speed percentage (default: 90, minimum for effective turning)
   - scan_angle_range: LIDAR scan angle range in degrees (default: 90)
+  - enable_camera: Launch OAK-D Lite camera nodes (default: true, set false if camera not connected)
+  - lidar_min_range: Ignore LIDAR readings closer than this distance in meters (default: 0.25)
 
 Features:
   - Automatic emergency stop reset on startup for immediate operation
@@ -109,6 +111,12 @@ def generate_launch_description():
         default_value='460800',
         description='LIDAR serial baudrate'
     )
+
+    enable_camera_arg = DeclareLaunchArgument(
+        'enable_camera',
+        default_value='true',
+        description='Launch OAK-D Lite camera and point cloud nodes (set false if camera not connected)'
+    )
     
     # Include the basic sensor launch (LIDAR + OAK-D Lite + IMU)
     sensor_launch = IncludeLaunchDescription(
@@ -118,7 +126,8 @@ def generate_launch_description():
         launch_arguments={
             'use_rviz': LaunchConfiguration('use_rviz'),
             'serial_port': LaunchConfiguration('lidar_serial_port'),
-            'serial_baudrate': LaunchConfiguration('lidar_baudrate')
+            'serial_baudrate': LaunchConfiguration('lidar_baudrate'),
+            'enable_camera': LaunchConfiguration('enable_camera')
         }.items()
     )
     
@@ -139,7 +148,7 @@ def generate_launch_description():
             '-p', 'base_frame:=base_footprint',
         ],
         name='serial_motor_bridge',
-        output='screen'
+        output='log'
     )
     
     # Autonomous navigation node (using ExecuteProcess with proper parameter format)
@@ -158,7 +167,7 @@ def generate_launch_description():
             '-p', 'command_timeout:=2.0'
         ],
         name='autonomous_navigation_node',
-        output='screen'
+        output='log'
     )
     
     # Startup messages
@@ -195,7 +204,7 @@ def generate_launch_description():
             '-p', 'port:=8080',
         ],
         name='robot_dashboard',
-        output='screen'
+        output='log'
     )
     return LaunchDescription([
         # Launch arguments
@@ -210,6 +219,7 @@ def generate_launch_description():
         use_rviz_arg,
         lidar_serial_port_arg,
         lidar_baudrate_arg,
+        enable_camera_arg,
         
         # Startup messages
         startup_message,

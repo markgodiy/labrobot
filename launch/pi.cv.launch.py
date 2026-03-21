@@ -45,7 +45,7 @@ def generate_launch_description():
     node_robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        output='screen',
+        output='log',
         parameters=[{
             'robot_description': robot_description_config.toxml(),
             'use_sim_time': use_sim_time
@@ -57,7 +57,7 @@ def generate_launch_description():
         package='joint_state_publisher',
         executable='joint_state_publisher',
         name='joint_state_publisher',
-        output='screen',
+        output='log',
         parameters=[{
             'robot_description': robot_description_config.toxml(),
             'use_sim_time': use_sim_time
@@ -110,7 +110,7 @@ def generate_launch_description():
             {'scan_mode': scan_mode},
             {'use_sim_time': use_sim_time}
         ],
-        output='screen'
+        output='log'
     )
 
     oak_camera = Node(
@@ -138,7 +138,7 @@ def generate_launch_description():
             'rgb.i_low_bandwidth': False,
             'stereo.i_low_bandwidth': False,
         }],
-        output='screen'
+        output='log'
     )
 
     point_cloud_container = ComposableNodeContainer(
@@ -173,7 +173,7 @@ def generate_launch_description():
                 }]
             ),
         ],
-        output='screen',
+        output='log',
     )
 
     rgb_republisher = Node(
