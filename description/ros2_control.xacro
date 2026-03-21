@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+    <!-- ros2_control hardware interface not used — robot uses serial_motor_bridge -->
+</robot>

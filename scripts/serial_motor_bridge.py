@@ -349,7 +349,7 @@ class SerialMotorBridge(Node):
 
         # Broadcast TF: odom -> base_footprint
         tf = TransformStamped()
-        tf.header.stamp = now
+        tf.header.stamp = now_msg
         tf.header.frame_id = self.odom_frame
         tf.child_frame_id = self.base_frame
         tf.transform.translation.x = self.odom_x
