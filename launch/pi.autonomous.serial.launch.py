@@ -122,7 +122,7 @@ def generate_launch_description():
         }.items()
     )
     
-    # Serial motor bridge node (using ExecuteProcess with proper parameter format)
+    # Serial motor bridge node
     serial_bridge_node = ExecuteProcess(
         cmd=[
             'python3', os.path.join(scripts_path, 'serial_motor_bridge.py'),
@@ -130,7 +130,13 @@ def generate_launch_description():
             '-p', 'serial_port:=/dev/ttyACM0',
             '-p', 'baudrate:=115200',
             '-p', 'timeout:=1.0',
-            '-p', 'reconnect_interval:=5.0'
+            '-p', 'reconnect_interval:=5.0',
+            '-p', 'wheel_base_m:=0.347',
+            '-p', 'wheel_radius_m:=0.0325',
+            '-p', 'ticks_per_rev:=3436',
+            '-p', 'encoder_poll_hz:=20.0',
+            '-p', 'odom_frame:=odom',
+            '-p', 'base_frame:=base_footprint',
         ],
         name='serial_motor_bridge',
         output='screen'

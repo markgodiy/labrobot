@@ -54,15 +54,8 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}]
     )
 
-    # Static transform publisher for odom->base_footprint (basic odometry for real robot)
-    # Note: In a real robot setup, this should be replaced with actual odometry from wheel encoders
-    static_tf_pub_odom_base = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='odom_to_base_footprint_publisher',
-        arguments=['--x', '0', '--y', '0', '--z', '0', '--qx', '0', '--qy', '0', '--qz', '0', '--qw', '1', '--frame-id', 'odom', '--child-frame-id', 'base_footprint'],
-        parameters=[{'use_sim_time': use_sim_time}]
-    )
+    # odom->base_footprint is broadcast dynamically by serial_motor_bridge.
+    # Static placeholder removed — a static identity tf here would conflict.
 
     # Static transform publisher to connect OAK-D base frame to robot's depth camera frame
     # This ensures the OAK-D TF tree is properly connected to the robot
@@ -231,7 +224,6 @@ def generate_launch_description():
         node_robot_state_publisher,
         node_joint_state_publisher,
         static_tf_pub_map_odom,
-        static_tf_pub_odom_base,
         static_tf_pub_oak_base,  # Connect OAK-D TF tree to robot
         rplidar_node,
         oak_camera,  # Full OAK-D Lite configuration

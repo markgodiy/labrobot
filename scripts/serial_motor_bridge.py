@@ -38,12 +38,11 @@ import threading
 import time
 import math
 from threading import Lock
-# Standard ROS 2 service and message imports
 from std_srvs.srv import Trigger, SetBool
-from std_msgs.msg import String, Header
-from geometry_msgs.msg import Twist, Point, Pose, Quaternion, Vector3
+from std_msgs.msg import String
+from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
-import tf_transformations
+from tf2_ros import TransformBroadcaster
 
 class SerialMotorBridge(Node):
     def __init__(self):
@@ -54,12 +53,25 @@ class SerialMotorBridge(Node):
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('timeout', 1.0)
         self.declare_parameter('reconnect_interval', 5.0)
-        
+        self.declare_parameter('wheel_base_m', 0.347)      # center-to-center from URDF
+        self.declare_parameter('wheel_radius_m', 0.0325)   # 65mm diameter / 2
+        self.declare_parameter('ticks_per_rev', 3436)
+        self.declare_parameter('encoder_poll_hz', 20.0)    # encoder query rate
+        self.declare_parameter('odom_frame', 'odom')
+        self.declare_parameter('base_frame', 'base_footprint')
+
         # Get parameters
         self.serial_port = self.get_parameter('serial_port').value
         self.baudrate = self.get_parameter('baudrate').value
         self.timeout = self.get_parameter('timeout').value
         self.reconnect_interval = self.get_parameter('reconnect_interval').value
+        self.wheel_base_m = self.get_parameter('wheel_base_m').value
+        self.wheel_radius_m = self.get_parameter('wheel_radius_m').value
+        self.ticks_per_rev = self.get_parameter('ticks_per_rev').value
+        encoder_poll_hz = self.get_parameter('encoder_poll_hz').value
+        self.odom_frame = self.get_parameter('odom_frame').value
+        self.base_frame = self.get_parameter('base_frame').value
+        self.m_per_tick = (2.0 * math.pi * self.wheel_radius_m) / self.ticks_per_rev
         
         # Serial connection
         self.ser = None
@@ -71,14 +83,17 @@ class SerialMotorBridge(Node):
         self.log_publisher = self.create_publisher(String, '/motor_controller/logs', 10)
         self.encoder_data_publisher = self.create_publisher(String, '/motor_controller/encoder_data', 10)
         self.odom_publisher = self.create_publisher(Odometry, '/odom', 10)
-        
-        # Odometry tracking
+
+        # TF broadcaster for odom -> base_footprint
+        self.tf_broadcaster = TransformBroadcaster(self)
+
+        # Odometry state (integrated from encoder counts)
         self.odom_x = 0.0
         self.odom_y = 0.0
         self.odom_theta = 0.0
-        self.last_encoder_time = time.time()
-        self.last_left_distance = 0.0
-        self.last_right_distance = 0.0
+        self.last_left_count = None   # None until first encoder reading
+        self.last_right_count = None
+        self.last_odom_time = None
         
         # Services
         self.stop_service = self.create_service(Trigger, '/motor/stop', self.handle_stop)
@@ -94,8 +109,9 @@ class SerialMotorBridge(Node):
             10
         )
         
-        # Status timer
+        # Timers
         self.status_timer = self.create_timer(1.0, self.request_status)
+        self.encoder_timer = self.create_timer(1.0 / encoder_poll_hz, self.poll_encoders)
         
         # Initialize serial connection
         self.connect_serial()
@@ -271,16 +287,76 @@ class SerialMotorBridge(Node):
     def process_incoming_message(self, msg):
         """Process incoming JSON message from MicroPython"""
         msg_type = msg.get("type", "response")
-        
-        if msg_type == "status":
-            # Publish status
+
+        # Extract encoder data wherever it appears
+        encoder_data = msg.get("encoder_data") or msg.get("encoder")
+        if encoder_data and "left_count" in encoder_data:
+            self._update_odometry(encoder_data)
+            enc_msg = String()
+            enc_msg.data = json.dumps(encoder_data)
+            self.encoder_data_publisher.publish(enc_msg)
+
+        if msg_type in ("status", "heartbeat"):
             status_msg = String()
             status_msg.data = json.dumps(msg)
             self.status_publisher.publish(status_msg)
-            
+
         elif msg_type == "log":
-            # Publish log message
             self.publish_log(f"[{msg.get('level', 'INFO')}] {msg.get('message', '')}")
+
+    def _update_odometry(self, encoder_data):
+        """Compute differential drive odometry from cumulative encoder counts."""
+        left_count = encoder_data["left_count"]
+        right_count = encoder_data["right_count"]
+
+        if self.last_left_count is None:
+            self.last_left_count = left_count
+            self.last_right_count = right_count
+            return
+
+        delta_left  = (left_count  - self.last_left_count)  * self.m_per_tick
+        delta_right = (right_count - self.last_right_count) * self.m_per_tick
+        self.last_left_count  = left_count
+        self.last_right_count = right_count
+
+        linear  = (delta_left + delta_right) / 2.0
+        angular = (delta_right - delta_left) / self.wheel_base_m
+
+        self.odom_theta += angular
+        self.odom_x += linear * math.cos(self.odom_theta)
+        self.odom_y += linear * math.sin(self.odom_theta)
+
+        ros_now = self.get_clock().now()
+        now_msg = ros_now.to_msg()
+        dt = (ros_now.nanoseconds - self.last_odom_time.nanoseconds) * 1e-9 \
+             if self.last_odom_time is not None else 0.05
+        self.last_odom_time = ros_now
+        vx  = linear  / dt if dt > 0 else 0.0
+        wz  = angular / dt if dt > 0 else 0.0
+
+        # Publish nav_msgs/Odometry
+        odom = Odometry()
+        odom.header.stamp = now_msg
+        odom.header.frame_id = self.odom_frame
+        odom.child_frame_id = self.base_frame
+        odom.pose.pose.position.x = self.odom_x
+        odom.pose.pose.position.y = self.odom_y
+        odom.pose.pose.orientation.z = math.sin(self.odom_theta / 2.0)
+        odom.pose.pose.orientation.w = math.cos(self.odom_theta / 2.0)
+        odom.twist.twist.linear.x  = vx
+        odom.twist.twist.angular.z = wz
+        self.odom_publisher.publish(odom)
+
+        # Broadcast TF: odom -> base_footprint
+        tf = TransformStamped()
+        tf.header.stamp = now
+        tf.header.frame_id = self.odom_frame
+        tf.child_frame_id = self.base_frame
+        tf.transform.translation.x = self.odom_x
+        tf.transform.translation.y = self.odom_y
+        tf.transform.rotation.z = math.sin(self.odom_theta / 2.0)
+        tf.transform.rotation.w = math.cos(self.odom_theta / 2.0)
+        self.tf_broadcaster.sendTransform(tf)
     
     def publish_log(self, message):
         """Publish log message"""
@@ -292,6 +368,11 @@ class SerialMotorBridge(Node):
         """Request status from controller"""
         if self.connected:
             self.send_command_async({"cmd": "status"})
+
+    def poll_encoders(self):
+        """Poll encoder counts at the configured rate for odometry."""
+        if self.connected:
+            self.send_command_async({"cmd": "get_encoders"})
     
     # Service handlers
     def handle_stop(self, request, response):
@@ -324,6 +405,19 @@ class SerialMotorBridge(Node):
         
         return response
     
+    def handle_reset_emergency_stop(self, request, response):
+        """Handle reset emergency stop service call"""
+        result = self.send_command({"cmd": "reset_estop"})
+        if result and result.get("status") == "ok":
+            response.success = True
+            response.message = result.get("message", "Emergency stop reset")
+            self.get_logger().info("Emergency stop reset")
+        else:
+            response.success = False
+            response.message = "Failed to reset emergency stop"
+            self.get_logger().error("Failed to reset emergency stop")
+        return response
+
     def handle_autonomous_mode(self, request, response):
         """Handle autonomous mode service call"""
         mode = "on" if request.data else "off"
