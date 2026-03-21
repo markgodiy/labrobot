@@ -41,6 +41,7 @@ install(
 # Install Python scripts as executables
 install(PROGRAMS
   scripts/serial_motor_bridge.py
+  scripts/robot_dashboard.py
   scripts/autonomous_navigation_node.py
   scripts/serial_nav_control.py
   scripts/test_micropython_controller.py

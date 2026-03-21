@@ -186,6 +186,17 @@ def generate_launch_description():
         msg="AUTO-RESET: Emergency stop automatically reset on startup for immediate operation"
     )
     
+
+    # Robot metrics web dashboard (http://<robot-ip>:8080)
+    dashboard_node = ExecuteProcess(
+        cmd=[
+            'python3', os.path.join(scripts_path, 'robot_dashboard.py'),
+            '--ros-args',
+            '-p', 'port:=8080',
+        ],
+        name='robot_dashboard',
+        output='screen'
+    )
     return LaunchDescription([
         # Launch arguments
         serial_port_arg,
@@ -216,4 +227,7 @@ def generate_launch_description():
         
         # Launch autonomous navigation
         autonomous_nav_node,
+
+        # Web dashboard
+        dashboard_node,
     ])
