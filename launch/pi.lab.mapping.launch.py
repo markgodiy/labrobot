@@ -137,6 +137,7 @@ def generate_launch_description():
             'use_sim_time': False,
             'autostart': True,
             'node_names': ['slam_toolbox'],
+            'bond_timeout': 15.0,  # slam_toolbox init takes >4s default timeout
         }],
     )
 

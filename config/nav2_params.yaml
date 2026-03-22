@@ -374,5 +374,6 @@ lifecycle_manager_slam:
   ros__parameters:
     use_sim_time: false
     autostart: true
+    bond_timeout: 15.0
     node_names:
-      - map_saver
+      - slam_toolbox
