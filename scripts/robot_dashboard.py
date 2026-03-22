@@ -60,7 +60,7 @@ _metrics: dict = {
     "system":   {"cpu_temp_c": None, "mem_used_mb": None, "mem_total_mb": None, "uptime_s": 0},
     "pico":     {"cpu_temp_c": None, "led_on": None, "uptime_ms": None, "cmds": None, "errors": None, "version": None, "ts": 0},
     "nav":      {"enabled": False, "action": "idle", "obstacle": False, "path_clear": True, "ts": 0},
-    "lidar":    {"pts": [], "front_m": None, "left_m": None, "right_m": None, "ts": 0},
+    "lidar":    {"pts": [], "front_m": None, "left_m": None, "right_m": None, "rear_m": None, "ts": 0},
 }
 
 
@@ -211,6 +211,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="row"><span class="lbl tip" data-tip="Min distance in ±45° forward arc">Front</span><span><span class="val" id="lidar-front">—</span><span class="unit">m</span></span></div>
       <div class="row"><span class="lbl tip" data-tip="Min distance on the left side">Left</span><span><span class="val" id="lidar-left">—</span><span class="unit">m</span></span></div>
       <div class="row"><span class="lbl tip" data-tip="Min distance on the right side">Right</span><span><span class="val" id="lidar-right">—</span><span class="unit">m</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Min distance behind the robot (used for backup decisions)">Rear</span><span><span class="val" id="lidar-rear">—</span><span class="unit">m</span></span></div>
     </div>
 
     <!-- Odometry -->
@@ -441,6 +442,8 @@ async function poll() {
     $('lidar-front').className = 'val ' + dc(li.front_m);
     $('lidar-left').className  = 'val ' + dc(li.left_m);
     $('lidar-right').className = 'val ' + dc(li.right_m);
+    $('lidar-rear').textContent = li.rear_m  != null ? fmt(li.rear_m,  1) : '—';
+    $('lidar-rear').className  = 'val ' + dc(li.rear_m);
     stale($('lidar-front'), li.ts);
     drawLidar(li.pts || [], li.ts);
 
@@ -1010,12 +1013,16 @@ class RobotDashboardNode(Node):
         front_r   = [ranges[i] for i in front_idx if CHASSIS_MIN < ranges[i] < msg.range_max]
         left_r    = [r for r in ranges[:n // 4]       if CHASSIS_MIN < r < msg.range_max]
         right_r   = [r for r in ranges[n * 3 // 4:]  if CHASSIS_MIN < r < msg.range_max]
+        # Rear: robot rear = LIDAR angle 0 = index n//2 (center of array)
+        rear_idx  = list(range(max(0, n // 2 - half_idx), min(n, n // 2 + half_idx)))
+        rear_r    = [ranges[i] for i in rear_idx if CHASSIS_MIN < ranges[i] < msg.range_max]
 
         with _lock:
             _metrics['lidar']['pts']     = pts
             _metrics['lidar']['front_m'] = round(min(front_r), 2) if front_r else None
             _metrics['lidar']['left_m']  = round(min(left_r),  2) if left_r  else None
             _metrics['lidar']['right_m'] = round(min(right_r), 2) if right_r else None
+            _metrics['lidar']['rear_m']  = round(min(rear_r),  2) if rear_r  else None
             _metrics['lidar']['ts']      = now
 
     def _update_sys(self):

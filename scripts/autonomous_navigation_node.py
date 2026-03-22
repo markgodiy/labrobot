@@ -306,8 +306,13 @@ class AutonomousNavigationNode(Node):
         # Check for obstacles
         obstacle_detected = min_distance < self.min_obstacle_distance
 
-        # Determine best direction if obstacle detected.
-        # With 180° mount: first quarter of scan = robot RIGHT, last quarter = robot LEFT.
+        # Rear sector: robot rear = LIDAR angle 0 = index n//2 (center of array)
+        rear_indices = list(range(max(0, n // 2 - half_idx), min(n, n // 2 + half_idx)))
+        rear_ranges  = [scan_msg.ranges[i] for i in rear_indices
+                        if self.lidar_min_range < scan_msg.ranges[i] < scan_msg.range_max]
+        rear_clear   = not rear_ranges or min(rear_ranges) > self.min_obstacle_distance
+
+        # Determine best direction if obstacle detected
         direction = "forward"
         if obstacle_detected:
             quarter_point = n // 4
@@ -325,8 +330,10 @@ class AutonomousNavigationNode(Node):
                 left_avg  = np.mean([r for r in left_ranges  if self.lidar_min_range < r < scan_msg.range_max])
                 right_avg = np.mean([r for r in right_ranges if self.lidar_min_range < r < scan_msg.range_max])
                 direction = "left" if left_avg > right_avg else "right"
-            else:
+            elif rear_clear:
                 direction = "backward"
+            else:
+                direction = "backward"  # All blocked — escape behavior will take over
         
         return not obstacle_detected, min_distance, direction
     
