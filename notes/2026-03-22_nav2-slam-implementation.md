@@ -19,6 +19,7 @@ connection TBD).
 | `maps/.gitkeep` | New — placeholder for map files |
 | `package.xml` | Added nav2 + slam_toolbox exec deps |
 | `CMakeLists.txt` | Install new launch files, config, maps/ |
+| `.gitattributes` | New — eol=lf for scripts/launch |
 
 ---
 
@@ -132,6 +133,48 @@ ros2 action send_goal /navigate_to_pose nav2_msgs/action/NavigateToPose \
 ros2 run tf2_tools view_frames
 # Expect: map → odom (from AMCL), odom → base_footprint (from bridge)
 ros2 topic echo /scan --once | grep frame_id   # expect: lidar_frame
+```
+
+---
+
+## Issues Encountered During Bringup
+
+### 1. Package not found on first launch
+
+**Error**: `Package 'labrobot' not found, searching: ['/opt/ros/jazzy']`
+
+**Cause**: Workspace overlay not sourced / `colcon build` not run after adding new files.
+
+**Fix**:
+
+```bash
+cd ~/lab_ws
+colcon build --symlink-install --packages-select labrobot
+source ~/lab_ws/install/setup.bash
+```
+
+### 2. Scripts not executable after `git pull`
+
+**Error**: `executable 'serial_motor_bridge.py' not found on the libexec directory`
+
+**Cause**: With `--symlink-install`, ROS 2 symlinks `lib/labrobot/*.py` directly to
+`src/labrobot/scripts/*.py`. Git does not preserve the execute bit when cloning or
+pulling, so the source files land as `100644` (not executable). The symlink inherits
+the source permission, causing ROS 2's node finder to reject the file.
+
+**Fix (one-time)**: Mark all scripts executable in the git index so the bit is stored
+in git and applied on every future clone/pull:
+
+```bash
+git update-index --chmod=+x scripts/*.py launch/*.py scripts/*.sh
+git commit -m "fix: mark all scripts and launch files executable in git index"
+git push
+```
+
+On the Pi after any pull before this fix was in place:
+
+```bash
+chmod +x ~/lab_ws/src/labrobot/scripts/*.py ~/lab_ws/src/labrobot/launch/*.py
 ```
 
 ---
