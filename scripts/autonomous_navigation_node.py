@@ -288,7 +288,6 @@ class AutonomousNavigationNode(Node):
         
         # LIDAR is mounted 180° rotated on this robot.
         # Robot forward = LIDAR angle ±π = indices near 0 and n-1 (wraps around array boundary).
-        # Robot left/right are also swapped vs standard LIDAR mounting.
         n = len(scan_msg.ranges)
         half_range = np.radians(self.scan_angle_range / 2)
         half_idx = int(half_range / scan_msg.angle_increment)
@@ -312,8 +311,8 @@ class AutonomousNavigationNode(Node):
         direction = "forward"
         if obstacle_detected:
             quarter_point = n // 4
-            right_ranges = scan_msg.ranges[:quarter_point]   # LIDAR left = robot right
-            left_ranges  = scan_msg.ranges[-quarter_point:]  # LIDAR right = robot left
+            left_ranges  = scan_msg.ranges[:quarter_point]
+            right_ranges = scan_msg.ranges[-quarter_point:]
 
             left_clear  = len([r for r in left_ranges  if r > self.min_obstacle_distance]) > len(left_ranges)  * 0.7
             right_clear = len([r for r in right_ranges if r > self.min_obstacle_distance]) > len(right_ranges) * 0.7

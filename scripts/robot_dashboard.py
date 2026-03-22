@@ -1008,8 +1008,8 @@ class RobotDashboardNode(Node):
         half_idx  = int(math.radians(45) / abs(msg.angle_increment))
         front_idx = list(range(n - half_idx, n)) + list(range(0, half_idx))
         front_r   = [ranges[i] for i in front_idx if CHASSIS_MIN < ranges[i] < msg.range_max]
-        left_r    = [r for r in ranges[n * 3 // 4:]  if CHASSIS_MIN < r < msg.range_max]
-        right_r   = [r for r in ranges[:n // 4]      if CHASSIS_MIN < r < msg.range_max]
+        left_r    = [r for r in ranges[:n // 4]       if CHASSIS_MIN < r < msg.range_max]
+        right_r   = [r for r in ranges[n * 3 // 4:]  if CHASSIS_MIN < r < msg.range_max]
 
         with _lock:
             _metrics['lidar']['pts']     = pts
