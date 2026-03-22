@@ -127,7 +127,7 @@ class NavState:
         self.estop               = True   # safe default — send reset_estop to enable
         self.last_cmd_time       = ticks_ms()
         self.cmd_timeout_ms      = 3000
-        self.ramp_step           = 3000
+        self.ramp_step           = 10000  # ~250ms 0→100% ramp (was 3000 = ~1s)
         self.ramp_delay_ms       = 50
         self.move_start_time     = 0
         self.move_duration       = 0
@@ -310,8 +310,28 @@ def _pct_to_pwm(pct):
     return int(pct * 65535 // 100)
 
 
+_ANTISTICTION_PWM = int(95 * 65535 // 100)  # high-power pulse to break left-motor backward stiction
+
+
 def _ramp(new_speed, left_fn, right_fn):
     nav.target_speed = new_speed
+    # Anti-stiction: left motor has high static friction in the backward direction
+    # when starting from rest. A brief (~30ms) forward pulse frees the brushes so
+    # the ramp can then accelerate smoothly backward.
+    # Only fires when: starting from rest AND left motor is going backward.
+    if nav.current_speed == 0 and new_speed > 0 and left_fn is _lb:
+        saved_left_dir = nav.left_dir   # -1 (backward) — restore after pulse
+        nav.left_dir = 1                # count forward pulse correctly
+        _set_dir(_lf, _rs)              # left fwd, right off
+        ena_pwm.duty_u16(_ANTISTICTION_PWM)
+        enb_pwm.duty_u16(0)
+        sleep_ms(30)                    # ~1–2 mm of movement at most
+        nav.left_dir = 0
+        _ls()                           # brief brake to avoid H-bridge shoot-through
+        ena_pwm.duty_u16(0)
+        sleep_ms(15)
+        nav.left_dir = saved_left_dir   # restore -1 so encoder counts backward motion
+        nav.current_speed = 0           # ramp starts fresh in the real direction
     while nav.current_speed != nav.target_speed:
         if nav.estop:
             return

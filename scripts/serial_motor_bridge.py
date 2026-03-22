@@ -318,13 +318,17 @@ class SerialMotorBridge(Node):
             self.last_right_count = right_count
             return
 
-        delta_left  = (left_count  - self.last_left_count)  * self.m_per_tick
-        delta_right = (right_count - self.last_right_count) * self.m_per_tick
+        delta_left  =  (left_count  - self.last_left_count)  * self.m_per_tick
+        # Right motor is physically inverted (firmware-backward = physical-forward),
+        # so negate the raw encoder delta to get physical wheel displacement.
+        delta_right = -(right_count - self.last_right_count) * self.m_per_tick
         self.last_left_count  = left_count
         self.last_right_count = right_count
 
         linear  = (delta_left + delta_right) / 2.0
-        angular = (delta_right - delta_left) / self.wheel_base_m
+        # Angular uses (left - right) rather than (right - left) because the right
+        # motor inversion flips which side is "outer" during a turn.
+        angular = (delta_left - delta_right) / self.wheel_base_m
 
         self.odom_theta += angular
         self.odom_x += linear * math.cos(self.odom_theta)
