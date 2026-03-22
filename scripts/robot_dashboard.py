@@ -27,7 +27,10 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import LaserScan
+from std_srvs.srv import SetBool
 from rcl_interfaces.msg import Log
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 import json
 import math
@@ -56,6 +59,8 @@ _metrics: dict = {
     "status":   {"emergency_stop": None, "ts": 0},
     "system":   {"cpu_temp_c": None, "mem_used_mb": None, "mem_total_mb": None, "uptime_s": 0},
     "pico":     {"cpu_temp_c": None, "led_on": None, "uptime_ms": None, "cmds": None, "errors": None, "version": None, "ts": 0},
+    "nav":      {"enabled": False, "action": "idle", "obstacle": False, "path_clear": True, "ts": 0},
+    "lidar":    {"pts": [], "front_m": None, "left_m": None, "right_m": None, "ts": 0},
 }
 
 
@@ -112,7 +117,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   .dot.green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .dot.red    { background: var(--red); }
   .dot.yellow { background: var(--yellow); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+  /* car dashboard 3-column layout */
+  .dash { display: grid; grid-template-columns: 260px 1fr 260px; gap: 14px; align-items: start; }
+  .dash-col { display: flex; flex-direction: column; gap: 14px; }
+  @media (max-width: 900px) { .dash { grid-template-columns: 1fr; } }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
   .card-title { font-size: .68rem; font-weight: 700; letter-spacing: 1px;
                 text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
@@ -141,6 +149,13 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     box-shadow: 0 4px 12px rgba(0,0,0,.5);
   }
   .tip:hover::after { opacity: 1; }
+  /* nav toggle button */
+  .nav-btn { background:#2a2d3a; color:var(--text); border:1px solid var(--border);
+             border-radius:5px; padding:2px 8px; font-size:.72rem; cursor:pointer; margin-left:6px; }
+  .nav-btn:hover { background:#3a3f5c; }
+  .nav-btn.active { background:#1a3a1a; border-color:var(--green); color:var(--green); }
+  /* lidar canvas — fills center card */
+  #lidar-canvas { display:block; width:100%; height:auto; border-radius:6px; background:#0a0c14; }
   /* control card */
   .dpad-mini { display:grid; grid-template-columns:repeat(3,44px); grid-template-rows:repeat(3,44px); gap:5px; margin:10px auto; }
   .dc-btn { background:#1e2130; border:1px solid var(--border); border-radius:8px;
@@ -175,80 +190,119 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="badge"><span class="dot yellow" id="conn-dot"></span><span id="conn-text">Connecting…</span></div>
 </header>
 
-<div class="grid">
+<div class="dash">
 
-  <!-- Odometry -->
-  <div class="card">
-    <div class="card-title">Odometry</div>
-    <div class="row"><span class="lbl tip" data-tip="Distance traveled left/right from the start point (0 = where the robot booted)">X</span>      <span><span class="val" id="ox">—</span><span class="unit">m</span></span></div>
-    <div class="row"><span class="lbl tip" data-tip="Distance traveled forward/backward from the start point">Y</span>      <span><span class="val" id="oy">—</span><span class="unit">m</span></span></div>
-    <div class="row"><span class="lbl tip" data-tip="Which direction the robot is facing. 0° = forward at boot, +90° = turned left, -90° = turned right">Heading</span><span><span class="val" id="oh">—</span><span class="unit">deg</span></span></div>
-    <hr>
-    <div class="row"><span class="lbl tip" data-tip="Forward/backward speed. Positive = moving forward, negative = reversing">Linear vel</span> <span><span class="val" id="ovx">—</span><span class="unit">m/s</span></span></div>
-    <div class="row"><span class="lbl tip" data-tip="Rotation speed. Positive = turning left, negative = turning right">Angular vel</span><span><span class="val" id="owz">—</span><span class="unit">rad/s</span></span></div>
-  </div>
+  <!-- ── LEFT: navigation + position + battery ── -->
+  <div class="dash-col">
 
-  <!-- Encoders + bridge -->
-  <div class="card">
-    <div class="card-title">Encoders</div>
-    <div class="row"><span class="lbl tip" data-tip="Cumulative encoder ticks from the left wheel since boot. Used to calculate odometry. 3436 ticks = 1 full wheel rotation.">Left count</span> <span><span class="val" id="el">—</span><span class="unit">ticks</span></span></div>
-    <div class="row"><span class="lbl tip" data-tip="Cumulative encoder ticks from the right wheel since boot. Used to calculate odometry. 3436 ticks = 1 full wheel rotation.">Right count</span><span><span class="val" id="er">—</span><span class="unit">ticks</span></span></div>
-    <hr>
-    <div class="row"><span class="lbl tip" data-tip="Whether serial_motor_bridge.py is running and communicating with the Pico over USB serial. All motor commands and sensor data flow through this bridge.">Bridge</span><span class="val" id="bridge">—</span></div>
-    <div class="row"><span class="lbl tip" data-tip="Emergency stop state on the Pico. OK = motors are allowed to run. ACTIVE = all motor commands are blocked until reset. Call /motor/reset_emergency_stop to clear.">E-Stop</span><span class="val" id="estop">—</span></div>
-  </div>
-
-  <!-- Battery -->
-  <div class="card">
-    <div class="card-title">Battery (INA219)</div>
-    <div class="row"><span class="lbl tip" data-tip="Pack voltage measured by INA219. Green ≥12V (healthy), yellow ≥11V (low), red &lt;11V (critical — recharge now). Full charge ≈ 13.2V for 3S LiPo.">Voltage</span><span><span class="val big" id="bv">—</span><span class="unit">V</span></span></div>
-    <div class="row"><span class="lbl tip" data-tip="Total current draw of the whole robot (Pi + motors + sensors) in milliamps. High values when motors are running.">Current</span><span><span class="val" id="bi">—</span><span class="unit">mA</span></span></div>
-    <div class="row"><span class="lbl tip" data-tip="Instantaneous power consumption (voltage × current). Gives a sense of total load on the battery.">Power</span>  <span><span class="val" id="bp">—</span><span class="unit">mW</span></span></div>
-    <div class="row"><span class="lbl tip" data-tip="Estimated charge remaining based on voltage thresholds. Not a coulomb counter — accuracy depends on battery chemistry matching the lookup table in firmware.">Charge</span> <span><span class="val" id="bsoc">—</span><span class="unit">%</span></span></div>
-  </div>
-
-  <!-- System -->
-  <div class="card">
-    <div class="card-title">Pi System</div>
-    <div class="row"><span class="lbl tip" data-tip="Raspberry Pi CPU temperature. Green &lt;60°C (normal), yellow &lt;75°C (warm), red ≥75°C (throttling likely). Typical idle ≈ 35–45°C.">CPU temp</span><span><span class="val" id="ct">—</span><span class="unit">°C</span></span></div>
-    <div class="row"><span class="lbl tip" data-tip="RAM used out of total. Camera, point cloud processing, and ROS 2 DDS typically use 600–900 MB combined.">Memory</span> <span class="val" id="mem">—</span></div>
-    <div class="row"><span class="lbl tip" data-tip="Time since last boot. Resets to 0 on power cycle or reboot.">Uptime</span> <span class="val" id="up">—</span></div>
-  </div>
-
-  <!-- Control -->
-  <div class="card">
-    <div class="card-title">Control</div>
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-      <span class="lbl">Speed</span>
-      <input type="range" id="ctrl-spd" min="0.05" max="0.5" step="0.05" value="0.25"
-             style="flex:1;accent-color:var(--blue)"
-             oninput="ctrlSpeed=+this.value;$('ctrl-spd-val').textContent=ctrlSpeed.toFixed(2)">
-      <span class="val muted" id="ctrl-spd-val" style="font-size:.8rem;min-width:28px">0.25</span>
+    <!-- Navigation -->
+    <div class="card">
+      <div class="card-title">Navigation</div>
+      <div class="row">
+        <span class="lbl">Mode</span>
+        <span style="display:flex;align-items:center">
+          <span class="val" id="nav-mode">—</span>
+          <button id="nav-toggle" class="nav-btn" onclick="toggleNav()">Enable</button>
+        </span>
+      </div>
+      <div class="row"><span class="lbl">Action</span><span class="val" id="nav-action">—</span></div>
+      <div class="row"><span class="lbl">Path</span><span class="val" id="nav-path">—</span></div>
+      <hr>
+      <div class="row"><span class="lbl tip" data-tip="Min distance in ±45° forward arc">Front</span><span><span class="val" id="lidar-front">—</span><span class="unit">m</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Min distance on the left side">Left</span><span><span class="val" id="lidar-left">—</span><span class="unit">m</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Min distance on the right side">Right</span><span><span class="val" id="lidar-right">—</span><span class="unit">m</span></span></div>
     </div>
-    <div class="dpad-mini">
-      <div></div>
-      <div class="dc-btn" id="dc-fwd">▲</div>
-      <div></div>
-      <div class="dc-btn" id="dc-left">◄</div>
-      <div class="dc-btn dc-stop" id="dc-stop">■</div>
-      <div class="dc-btn" id="dc-right">►</div>
-      <div></div>
-      <div class="dc-btn" id="dc-back">▼</div>
-      <div></div>
+
+    <!-- Odometry -->
+    <div class="card">
+      <div class="card-title">Odometry</div>
+      <div class="row"><span class="lbl tip" data-tip="Left/right distance from start">X</span><span><span class="val" id="ox">—</span><span class="unit">m</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Forward/backward distance from start">Y</span><span><span class="val" id="oy">—</span><span class="unit">m</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Heading: 0°=forward at boot, +90°=left, -90°=right">Heading</span><span><span class="val" id="oh">—</span><span class="unit">deg</span></span></div>
+      <hr>
+      <div class="row"><span class="lbl tip" data-tip="Forward speed. Positive=forward, negative=reverse">Speed</span><span><span class="val" id="ovx">—</span><span class="unit">m/s</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Rotation speed. Positive=left, negative=right">Turn rate</span><span><span class="val" id="owz">—</span><span class="unit">rad/s</span></span></div>
     </div>
-    <a href="/remote" target="_blank" style="display:block;text-align:center;font-size:.75rem;color:var(--muted);margin-top:6px;text-decoration:none">&#128241; Mobile Remote →</a>
+
+    <!-- Battery -->
+    <div class="card">
+      <div class="card-title">Battery (INA219)</div>
+      <div class="row"><span class="lbl tip" data-tip="Pack voltage. Green ≥12V, yellow ≥11V, red &lt;11V. Full ≈ 13.2V.">Voltage</span><span><span class="val big" id="bv">—</span><span class="unit">V</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Current draw in milliamps (whole robot).">Current</span><span><span class="val" id="bi">—</span><span class="unit">mA</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Instantaneous power (V × I).">Power</span><span><span class="val" id="bp">—</span><span class="unit">mW</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Estimated charge remaining (voltage-based).">Charge</span><span><span class="val" id="bsoc">—</span><span class="unit">%</span></span></div>
+    </div>
+
   </div>
 
-  <!-- Pico W -->
-  <div class="card">
-    <div class="card-title">Pico W (MC)</div>
-    <div class="row"><span class="lbl tip" data-tip="RP2040 internal temperature sensor. Reflects the microcontroller die temperature, not ambient. Normal range 30–50°C.">CPU temp</span><span><span class="val" id="pct">—</span><span class="unit">°C</span></span></div>
-    <div class="row"><span class="lbl tip" data-tip="Onboard LED state. ON (green) = e-stop cleared, motors allowed to run. OFF = e-stop active, all motor commands blocked.">LED</span><span class="val" id="pled">—</span></div>
-    <hr>
-    <div class="row"><span class="lbl tip" data-tip="Time since the Pico booted, in milliseconds. Resets on USB power cycle or firmware reset.">Uptime</span><span class="val" id="pup">—</span></div>
-    <div class="row"><span class="lbl tip" data-tip="Total serial commands processed by the Pico since boot (move, rotate, stop, status, etc).">Commands</span><span class="val" id="pcmds">—</span></div>
-    <div class="row"><span class="lbl tip" data-tip="Total command parse/execution errors since boot. Non-zero may indicate serial corruption or firmware bugs.">Errors</span><span class="val" id="perrs">—</span></div>
-    <div class="row"><span class="lbl tip" data-tip="Firmware version running on the Pico.">Version</span><span class="val muted" id="pver">—</span></div>
+  <!-- ── CENTER: LIDAR radar + control ── -->
+  <div class="dash-col">
+
+    <!-- LIDAR radar -->
+    <div class="card">
+      <div class="card-title">LIDAR — Top-Down View <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:.7rem;color:var(--muted)">● red &lt;0.5 m &nbsp;● yellow &lt;1 m &nbsp;● green &gt;1 m</span></div>
+      <canvas id="lidar-canvas" width="520" height="520"></canvas>
+    </div>
+
+    <!-- Control -->
+    <div class="card">
+      <div class="card-title">Control</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+        <span class="lbl">Speed</span>
+        <input type="range" id="ctrl-spd" min="0.05" max="0.5" step="0.05" value="0.25"
+               style="flex:1;accent-color:var(--blue)"
+               oninput="ctrlSpeed=+this.value;$('ctrl-spd-val').textContent=ctrlSpeed.toFixed(2)">
+        <span class="val muted" id="ctrl-spd-val" style="font-size:.8rem;min-width:28px">0.25</span>
+      </div>
+      <div class="dpad-mini">
+        <div></div>
+        <div class="dc-btn" id="dc-fwd">▲</div>
+        <div></div>
+        <div class="dc-btn" id="dc-left">◄</div>
+        <div class="dc-btn dc-stop" id="dc-stop">■</div>
+        <div class="dc-btn" id="dc-right">►</div>
+        <div></div>
+        <div class="dc-btn" id="dc-back">▼</div>
+        <div></div>
+      </div>
+      <a href="/remote" target="_blank" style="display:block;text-align:center;font-size:.75rem;color:var(--muted);margin-top:6px;text-decoration:none">&#128241; Mobile Remote →</a>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT: system health ── -->
+  <div class="dash-col">
+
+    <!-- Encoders + bridge -->
+    <div class="card">
+      <div class="card-title">Encoders</div>
+      <div class="row"><span class="lbl tip" data-tip="Left wheel ticks since boot. 3436 ticks = 1 rotation.">Left count</span><span><span class="val" id="el">—</span><span class="unit">ticks</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="Right wheel ticks since boot. 3436 ticks = 1 rotation.">Right count</span><span><span class="val" id="er">—</span><span class="unit">ticks</span></span></div>
+      <hr>
+      <div class="row"><span class="lbl tip" data-tip="serial_motor_bridge connected to Pico over USB serial.">Bridge</span><span class="val" id="bridge">—</span></div>
+      <div class="row"><span class="lbl tip" data-tip="E-stop state. OK = motors allowed. ACTIVE = blocked.">E-Stop</span><span class="val" id="estop">—</span></div>
+    </div>
+
+    <!-- Pi System -->
+    <div class="card">
+      <div class="card-title">Pi System</div>
+      <div class="row"><span class="lbl tip" data-tip="Pi CPU temp. Green &lt;60°C, yellow &lt;75°C, red ≥75°C.">CPU temp</span><span><span class="val" id="ct">—</span><span class="unit">°C</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="RAM used / total.">Memory</span><span class="val" id="mem">—</span></div>
+      <div class="row"><span class="lbl tip" data-tip="Time since last boot.">Uptime</span><span class="val" id="up">—</span></div>
+    </div>
+
+    <!-- Pico W -->
+    <div class="card">
+      <div class="card-title">Pico W (MC)</div>
+      <div class="row"><span class="lbl tip" data-tip="RP2040 die temperature. Normal 30–50°C.">CPU temp</span><span><span class="val" id="pct">—</span><span class="unit">°C</span></span></div>
+      <div class="row"><span class="lbl tip" data-tip="LED ON = e-stop cleared, motors allowed.">LED</span><span class="val" id="pled">—</span></div>
+      <hr>
+      <div class="row"><span class="lbl tip" data-tip="Pico uptime since USB power-on.">Uptime</span><span class="val" id="pup">—</span></div>
+      <div class="row"><span class="lbl tip" data-tip="Total serial commands processed since boot.">Commands</span><span class="val" id="pcmds">—</span></div>
+      <div class="row"><span class="lbl tip" data-tip="Parse/execution errors since boot.">Errors</span><span class="val" id="perrs">—</span></div>
+      <div class="row"><span class="lbl tip" data-tip="Firmware version.">Version</span><span class="val muted" id="pver">—</span></div>
+    </div>
+
   </div>
 
 </div>
@@ -353,6 +407,43 @@ async function poll() {
     stale($('pct'), p.ts, 20);
 
     $('ts').textContent  = 'Last update: ' + new Date().toLocaleTimeString();
+
+    // nav state
+    const nav = d.nav || {};
+    const navOn = nav.enabled === true;
+    navEnabled = navOn;
+    $('nav-mode').textContent = nav.ts ? (navOn ? 'Autonomous' : 'Manual') : '—';
+    $('nav-mode').className   = 'val ' + (nav.ts ? (navOn ? 'green' : 'muted') : 'muted');
+    const btn = $('nav-toggle');
+    btn.textContent = navOn ? 'Disable' : 'Enable';
+    btn.className   = 'nav-btn' + (navOn ? ' active' : '');
+    const ACT_LBL = {idle:'— Idle', forward:'▲ Forward', backward:'▼ Backward',
+      rotate_left:'↺ Rotate Left', rotate_right:'↻ Rotate Right',
+      escape_backward:'⚡ Escape: Back', escape_turn:'⚡ Escape: Turn',
+      escape_forward:'⚡ Escape: Fwd', post_escape_forward:'▲ Escape+'};
+    const ACT_COL = {idle:'muted', forward:'green', backward:'yellow',
+      rotate_left:'blue', rotate_right:'blue',
+      escape_backward:'red', escape_turn:'red', escape_forward:'red', post_escape_forward:'yellow'};
+    const act = nav.action || 'idle';
+    $('nav-action').textContent = ACT_LBL[act] || act;
+    $('nav-action').className   = 'val ' + (ACT_COL[act] || '');
+    const pathOk = nav.path_clear !== false;
+    $('nav-path').textContent = nav.ts ? (pathOk ? 'Clear' : 'Blocked') : '—';
+    $('nav-path').className   = 'val ' + (nav.ts ? (pathOk ? 'green' : 'red') : 'muted');
+    stale($('nav-mode'), nav.ts);
+
+    // lidar clearances + radar
+    const li = d.lidar || {};
+    const dc = v => v == null ? '' : v < 0.5 ? 'red' : v < 1.0 ? 'yellow' : 'green';
+    $('lidar-front').textContent = li.front_m != null ? fmt(li.front_m, 1) : '—';
+    $('lidar-left').textContent  = li.left_m  != null ? fmt(li.left_m,  1) : '—';
+    $('lidar-right').textContent = li.right_m != null ? fmt(li.right_m, 1) : '—';
+    $('lidar-front').className = 'val ' + dc(li.front_m);
+    $('lidar-left').className  = 'val ' + dc(li.left_m);
+    $('lidar-right').className = 'val ' + dc(li.right_m);
+    stale($('lidar-front'), li.ts);
+    drawLidar(li.pts || [], li.ts);
+
   } catch(e) {
     if (++fails >= 3) {
       $('conn-dot').className = 'dot red';
@@ -413,6 +504,96 @@ document.addEventListener('keydown', e => {
 document.addEventListener('keyup', e => {
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) ctrlRelease();
 });
+
+// ── nav toggle ────────────────────────────────────────────────────────────────
+let navEnabled = false;
+function toggleNav() {
+  fetch('/nav', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({autonomous: !navEnabled})}).catch(()=>{});
+}
+
+// ── lidar radar ───────────────────────────────────────────────────────────────
+function drawLidar(pts, ts) {
+  const canvas = $('lidar-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const maxDist = 3.0;
+  const scale = (Math.min(W, H) / 2 - 24) / maxDist;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0a0c14';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid rings + distance labels
+  for (let r = 1; r <= maxDist; r++) {
+    ctx.strokeStyle = '#1e2538';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, r * scale, 0, 2 * Math.PI); ctx.stroke();
+    ctx.fillStyle = '#3a4560';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(r + 'm', cx + r * scale + 3, cy + 4);
+  }
+
+  // Cross hairs
+  ctx.strokeStyle = '#1e2538';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx, cy - maxDist * scale - 8); ctx.lineTo(cx, cy + maxDist * scale + 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx - maxDist * scale - 8, cy); ctx.lineTo(cx + maxDist * scale + 8, cy); ctx.stroke();
+
+  // Forward scan cone (±45°) — subtle blue tint
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.arc(cx, cy, maxDist * scale, -3 * Math.PI / 4, -Math.PI / 4);
+  ctx.closePath();
+  ctx.fillStyle = '#3b82f60a';
+  ctx.fill();
+  ctx.strokeStyle = '#3b82f630';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Obstacle threshold ring (0.5 m dashed red)
+  ctx.strokeStyle = '#ef444470';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.arc(cx, cy, 0.5 * scale, 0, 2 * Math.PI); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // No-data state
+  if (!ts || age(ts) > 5) {
+    ctx.fillStyle = '#3a4560';
+    ctx.font = '13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('No LIDAR data', cx, cy + 20);
+    ctx.textAlign = 'left';
+    // Draw robot even with no data
+    ctx.fillStyle = '#3b82f6';
+    ctx.beginPath(); ctx.moveTo(cx, cy - 9); ctx.lineTo(cx - 6, cy + 6); ctx.lineTo(cx + 6, cy + 6); ctx.closePath(); ctx.fill();
+    return;
+  }
+
+  // Scan points — LIDAR mounted 180° rotated, so flip both axes
+  for (const [angle, dist] of pts) {
+    const d = Math.min(dist, maxDist);
+    const px = cx + Math.sin(angle) * d * scale;
+    const py = cy + Math.cos(angle) * d * scale;
+    ctx.fillStyle = dist < 0.5 ? '#ef4444' : dist < 1.0 ? '#eab308' : '#22c55e';
+    ctx.beginPath(); ctx.arc(px, py, 2, 0, 2 * Math.PI); ctx.fill();
+  }
+
+  // Robot icon (blue triangle pointing forward/up)
+  ctx.fillStyle = '#3b82f6';
+  ctx.beginPath(); ctx.moveTo(cx, cy - 9); ctx.lineTo(cx - 6, cy + 6); ctx.lineTo(cx + 6, cy + 6); ctx.closePath(); ctx.fill();
+
+  // FWD label
+  ctx.fillStyle = '#3b82f6';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('FWD', cx, cy - maxDist * scale - 8);
+  ctx.textAlign = 'left';
+}
 
 // ── log stream ────────────────────────────────────────────────────────────────
 let logSince  = 0;
@@ -654,6 +835,18 @@ class _Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._respond(400, 'application/json',
                               json.dumps({'error': str(exc)}).encode())
+        elif self.path == '/nav':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                data   = json.loads(self.rfile.read(length))
+                if _node is not None:
+                    req = SetBool.Request()
+                    req.data = bool(data.get('autonomous', False))
+                    _node._nav_mode_client.call_async(req)
+                self._respond(200, 'application/json', b'{"ok":true}')
+            except Exception as exc:
+                self._respond(400, 'application/json',
+                              json.dumps({'error': str(exc)}).encode())
         else:
             self.send_response(404); self.end_headers()
 
@@ -675,10 +868,21 @@ class RobotDashboardNode(Node):
         port = self.get_parameter('port').value
         _node = self
 
-        self.create_subscription(String,   '/motor_controller/status',       self._on_status,   10)
-        self.create_subscription(String,   '/motor_controller/encoder_data', self._on_encoders, 10)
-        self.create_subscription(Odometry, '/odom',                          self._on_odom,     10)
-        self.create_subscription(Log,      '/rosout',                        self._on_rosout,  100)
+        sensor_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            depth=1
+        )
+
+        self.create_subscription(String,    '/motor_controller/status',       self._on_status,     10)
+        self.create_subscription(String,    '/motor_controller/encoder_data', self._on_encoders,   10)
+        self.create_subscription(Odometry,  '/odom',                          self._on_odom,       10)
+        self.create_subscription(Log,       '/rosout',                        self._on_rosout,    100)
+        self.create_subscription(String,    '/navigation/debug',              self._on_nav_debug,  10)
+        self.create_subscription(LaserScan, '/scan',                          self._on_scan, sensor_qos)
+
+        self._nav_mode_client = self.create_client(SetBool, '/set_autonomous_mode')
+        self._last_scan_ts = 0.0  # throttle scan processing to ~2 Hz for dashboard
 
         self._cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
@@ -760,6 +964,59 @@ class RobotDashboardNode(Node):
         with _log_lock:
             _log_buffer.append(entry)
             _log_total += 1
+
+    def _on_nav_debug(self, msg: String):
+        try:
+            data = json.loads(msg.data)
+        except json.JSONDecodeError:
+            return
+        now = time.time()
+        with _lock:
+            _metrics['nav']['enabled']    = data.get('autonomous_enabled', False)
+            _metrics['nav']['action']     = data.get('current_action', 'idle')
+            _metrics['nav']['obstacle']   = data.get('obstacle_detected', False)
+            _metrics['nav']['path_clear'] = data.get('path_clear', True)
+            _metrics['nav']['ts']         = now
+
+    def _on_scan(self, msg: LaserScan):
+        now = time.time()
+        if now - self._last_scan_ts < 0.4:  # max ~2.5 Hz for dashboard
+            return
+        self._last_scan_ts = now
+
+        ranges = msg.ranges
+        n = len(ranges)
+        if n == 0:
+            return
+
+        # Filter minimum: 0.30 m excludes chassis frame posts (~10–15 cm from LIDAR)
+        # while still catching real obstacles. Matches nav node's lidar_min_range intent.
+        CHASSIS_MIN = 0.30
+
+        # Downsample full 360° scan to ≤180 points
+        step = max(1, n // 180)
+        pts = []
+        for i in range(0, n, step):
+            r = ranges[i]
+            if CHASSIS_MIN < r < msg.range_max:
+                angle = msg.angle_min + i * msg.angle_increment
+                pts.append([round(angle, 3), round(r, 2)])
+
+        # Sector clearances — LIDAR mounted 180° rotated on robot:
+        # Robot forward = LIDAR angle ±π = indices near 0 and n-1 (wraps around)
+        # Left/right also swap relative to standard mounting
+        half_idx  = int(math.radians(45) / abs(msg.angle_increment))
+        front_idx = list(range(n - half_idx, n)) + list(range(0, half_idx))
+        front_r   = [ranges[i] for i in front_idx if CHASSIS_MIN < ranges[i] < msg.range_max]
+        left_r    = [r for r in ranges[n * 3 // 4:]  if CHASSIS_MIN < r < msg.range_max]
+        right_r   = [r for r in ranges[:n // 4]      if CHASSIS_MIN < r < msg.range_max]
+
+        with _lock:
+            _metrics['lidar']['pts']     = pts
+            _metrics['lidar']['front_m'] = round(min(front_r), 2) if front_r else None
+            _metrics['lidar']['left_m']  = round(min(left_r),  2) if left_r  else None
+            _metrics['lidar']['right_m'] = round(min(right_r), 2) if right_r else None
+            _metrics['lidar']['ts']      = now
 
     def _update_sys(self):
         sys_data = _read_sys_metrics()

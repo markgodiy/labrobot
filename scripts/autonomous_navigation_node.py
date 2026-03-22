@@ -250,18 +250,11 @@ class AutonomousNavigationNode(Node):
             return False
     
     def stop_movement(self):
-        """Stop robot movement"""
-        try:
-            request = Trigger.Request()
-            future = self.motor_stop_client.call_async(request)
-            rclpy.spin_until_future_complete(self, future, timeout_sec=1.0)
-            
-            if future.result() is not None:
-                return future.result().success
-            return False
-        except Exception as e:
-            self.get_logger().error(f"Failed to stop movement: {e}")
-            return False
+        """Stop robot movement via cmd_vel (safe to call from timer callbacks)."""
+        # Do NOT use spin_until_future_complete here — this is called from navigation_loop
+        # which runs inside a timer callback while the executor is already spinning.
+        # spin_until_future_complete on the same executor causes "Executor is already spinning".
+        return self.send_movement_command(0.0, 0.0)
     
     def controller_status_callback(self, msg):
         """Process controller status updates"""
@@ -293,48 +286,44 @@ class AutonomousNavigationNode(Node):
         if not scan_msg:
             return True, 0.0, "no_data"
         
-        # Convert angle range to indices
-        angle_min = scan_msg.angle_min
-        angle_increment = scan_msg.angle_increment
+        # LIDAR is mounted 180° rotated on this robot.
+        # Robot forward = LIDAR angle ±π = indices near 0 and n-1 (wraps around array boundary).
+        # Robot left/right are also swapped vs standard LIDAR mounting.
+        n = len(scan_msg.ranges)
         half_range = np.radians(self.scan_angle_range / 2)
-        
-        # Find indices for front-facing range
-        center_index = len(scan_msg.ranges) // 2
-        range_indices = int(half_range / angle_increment)
-        start_idx = max(0, center_index - range_indices)
-        end_idx = min(len(scan_msg.ranges), center_index + range_indices)
-        
-        # Get distances in front range
-        front_ranges = scan_msg.ranges[start_idx:end_idx]
-        valid_ranges = [r for r in front_ranges if self.lidar_min_range < r < scan_msg.range_max]
-        
+        half_idx = int(half_range / scan_msg.angle_increment)
+
+        # Front sector: wrap around index 0
+        front_indices = list(range(n - half_idx, n)) + list(range(0, half_idx))
+        front_ranges_raw = [scan_msg.ranges[i] for i in front_indices]
+        valid_ranges = [r for r in front_ranges_raw if self.lidar_min_range < r < scan_msg.range_max]
+
         if not valid_ranges:
             return True, 0.0, "no_valid_data"
-        
+
         min_distance = min(valid_ranges)
         avg_distance = np.mean(valid_ranges)
-        
+
         # Check for obstacles
         obstacle_detected = min_distance < self.min_obstacle_distance
-        
-        # Determine best direction if obstacle detected
+
+        # Determine best direction if obstacle detected.
+        # With 180° mount: first quarter of scan = robot RIGHT, last quarter = robot LEFT.
         direction = "forward"
         if obstacle_detected:
-            # Check left and right sides
-            quarter_point = len(scan_msg.ranges) // 4
-            left_ranges = scan_msg.ranges[:quarter_point]
-            right_ranges = scan_msg.ranges[-quarter_point:]
-            
-            left_clear = len([r for r in left_ranges if r > self.min_obstacle_distance]) > len(left_ranges) * 0.7
+            quarter_point = n // 4
+            right_ranges = scan_msg.ranges[:quarter_point]   # LIDAR left = robot right
+            left_ranges  = scan_msg.ranges[-quarter_point:]  # LIDAR right = robot left
+
+            left_clear  = len([r for r in left_ranges  if r > self.min_obstacle_distance]) > len(left_ranges)  * 0.7
             right_clear = len([r for r in right_ranges if r > self.min_obstacle_distance]) > len(right_ranges) * 0.7
-            
+
             if left_clear and not right_clear:
                 direction = "left"
             elif right_clear and not left_clear:
                 direction = "right"
             elif left_clear and right_clear:
-                # Choose based on average distance
-                left_avg = np.mean([r for r in left_ranges if self.lidar_min_range < r < scan_msg.range_max])
+                left_avg  = np.mean([r for r in left_ranges  if self.lidar_min_range < r < scan_msg.range_max])
                 right_avg = np.mean([r for r in right_ranges if self.lidar_min_range < r < scan_msg.range_max])
                 direction = "left" if left_avg > right_avg else "right"
             else:
