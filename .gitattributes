@@ -1,0 +1,3 @@
+scripts/*.py eol=lf
+launch/*.py eol=lf
+scripts/*.sh eol=lf
