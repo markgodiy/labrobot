@@ -28,7 +28,7 @@ from std_msgs.msg import String
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import LaserScan
-from std_srvs.srv import SetBool
+from std_srvs.srv import SetBool, Trigger
 from rcl_interfaces.msg import Log
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
@@ -667,35 +667,45 @@ REMOTE_HTML = """<!DOCTYPE html>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Robot Remote</title>
 <style>
-  :root { --bg:#0f1117; --card:#1a1d27; --border:#2a2d3a; --text:#e2e8f0; --muted:#8892a4;
-          --green:#22c55e; --red:#ef4444; --yellow:#eab308; --blue:#3b82f6; }
-  * { box-sizing:border-box; margin:0; padding:0; touch-action:manipulation; -webkit-tap-highlight-color:transparent; }
-  html, body { height:100%; background:var(--bg); color:var(--text);
-               font-family:'Segoe UI',system-ui,sans-serif; overflow:hidden; }
-  body { display:flex; flex-direction:column; padding:14px; gap:12px; }
-  header { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
-  header h1 { font-size:1rem; font-weight:600; }
-  a.back { font-size:.8rem; color:var(--muted); text-decoration:none; }
-  .speed-row { display:flex; align-items:center; gap:10px; flex-shrink:0; }
-  .speed-row label { font-size:.8rem; color:var(--muted); white-space:nowrap; }
-  input[type=range] { flex:1; accent-color:var(--blue); height:24px; }
-  .speed-val { font-size:.9rem; font-weight:700; min-width:44px; text-align:right; }
-  .dpad { display:grid; grid-template-columns:1fr 1fr 1fr; grid-template-rows:1fr 1fr 1fr;
-          gap:10px; flex:1; }
-  .dp { background:var(--card); border:2px solid var(--border); border-radius:16px;
-        display:flex; align-items:center; justify-content:center;
-        font-size:2.2rem; cursor:pointer; user-select:none; -webkit-user-select:none; }
-  .dp.pressed { background:#1e2a50; border-color:var(--blue); }
-  .dp-empty { visibility:hidden; }
-  .dp-stop { background:#2a1a1a; border-color:#7f1d1d; color:var(--red); font-size:2rem; }
-  .dp-stop.pressed { background:#4a1a1a; }
-  .estop { background:#7f1d1d; border:2px solid var(--red); border-radius:16px;
-           padding:18px; display:flex; align-items:center; justify-content:center;
-           font-size:1.05rem; font-weight:800; letter-spacing:2px; color:#fef2f2;
-           cursor:pointer; user-select:none; flex-shrink:0; }
-  .estop:active { background:#991b1b; }
-  .vel { text-align:center; font-size:.75rem; color:var(--muted);
-         font-variant-numeric:tabular-nums; flex-shrink:0; }
+  :root{--bg:#0f1117;--card:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;--muted:#8892a4;
+        --green:#22c55e;--red:#ef4444;--yellow:#eab308;--blue:#3b82f6;}
+  *{box-sizing:border-box;margin:0;padding:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;}
+  body{display:flex;flex-direction:column;padding:10px;gap:7px;}
+  header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+  header h1{font-size:.9rem;font-weight:600;}
+  a.back{font-size:.78rem;color:var(--muted);text-decoration:none;}
+  .top-row{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .top-row label{font-size:.75rem;color:var(--muted);white-space:nowrap;}
+  input[type=range]{flex:1;accent-color:var(--blue);height:22px;}
+  .spd-val{font-size:.82rem;font-weight:700;min-width:46px;text-align:right;}
+  .axswap{font-size:.72rem;background:var(--card);border:1px solid var(--border);
+          border-radius:6px;padding:3px 8px;color:var(--muted);cursor:pointer;white-space:nowrap;flex-shrink:0;}
+  .axswap.on{border-color:var(--yellow);color:var(--yellow);}
+  /* LIDAR */
+  .lidar-wrap{display:flex;justify-content:center;flex-shrink:0;}
+  canvas{border-radius:50%;background:#0a0c14;display:block;}
+  /* D-pad */
+  .dpad{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;
+        gap:7px;flex:1;min-height:0;}
+  .dp{background:var(--card);border:2px solid var(--border);border-radius:12px;
+      display:flex;align-items:center;justify-content:center;
+      font-size:1.8rem;cursor:pointer;user-select:none;-webkit-user-select:none;}
+  .dp.pressed{background:#1e2a50;border-color:var(--blue);}
+  .dp-diag{font-size:1.3rem;color:#3a4560;}
+  .dp-diag.pressed{color:var(--text);background:#1e2a50;border-color:var(--blue);}
+  .dp-stop{background:#2a1a1a;border-color:#7f1d1d;color:var(--red);}
+  .dp-stop.pressed{background:#4a1a1a;}
+  /* E-Stop */
+  .estop-btn{border-radius:12px;padding:11px 16px;display:flex;flex-direction:column;
+             align-items:center;justify-content:center;gap:2px;
+             cursor:pointer;user-select:none;flex-shrink:0;border:2px solid;}
+  .estop-btn:active{filter:brightness(1.3);}
+  .es-ok{background:#0d2b1a;border-color:var(--green);color:var(--green);}
+  .es-act{background:#2a1a1a;border-color:var(--red);color:var(--red);}
+  .es-lbl{font-size:.92rem;font-weight:800;letter-spacing:1px;}
+  .es-sub{font-size:.68rem;opacity:.75;}
+  .vel{text-align:center;font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums;flex-shrink:0;}
 </style>
 </head>
 <body>
@@ -704,48 +714,83 @@ REMOTE_HTML = """<!DOCTYPE html>
   <a class="back" href="/">&#8592; Dashboard</a>
 </header>
 
-<div class="speed-row">
+<div class="top-row">
   <label>Speed</label>
   <input type="range" id="spd" min="0.05" max="0.5" step="0.05" value="0.25"
-         oninput="spd=+this.value;$('sv').textContent=spd.toFixed(2)+' m/s'">
-  <span class="speed-val" id="sv">0.25 m/s</span>
+    oninput="spd=+this.value;document.getElementById('sv').textContent=spd.toFixed(2)+' m/s'">
+  <span class="spd-val" id="sv">0.25 m/s</span>
+  <button class="axswap" id="axbtn" onclick="toggleAxes()">Axes: Normal</button>
+</div>
+
+<div class="lidar-wrap">
+  <canvas id="lc" width="200" height="200"></canvas>
 </div>
 
 <div class="dpad">
-  <div class="dp dp-empty"></div>
+  <div class="dp dp-diag" id="b-fl">&#8598;</div>
   <div class="dp" id="b-fwd">&#9650;</div>
-  <div class="dp dp-empty"></div>
+  <div class="dp dp-diag" id="b-fr">&#8599;</div>
   <div class="dp" id="b-left">&#9664;</div>
   <div class="dp dp-stop" id="b-stop">&#9632;</div>
   <div class="dp" id="b-right">&#9654;</div>
-  <div class="dp dp-empty"></div>
+  <div class="dp dp-diag" id="b-bl">&#8601;</div>
   <div class="dp" id="b-back">&#9660;</div>
-  <div class="dp dp-empty"></div>
+  <div class="dp dp-diag" id="b-br">&#8600;</div>
 </div>
 
-<div class="estop" id="estop" ontouchstart="stop()" onclick="stop()">&#9940; E-STOP</div>
+<div class="estop-btn es-ok" id="estop-btn" onclick="toggleEstop()">
+  <span class="es-lbl" id="es-lbl">&#10003; Movement Allowed</span>
+  <span class="es-sub" id="es-sub">Tap to activate E-Stop</span>
+</div>
 
 <div class="vel" id="vel">v: 0.00 m/s &nbsp; &#969;: 0.00 rad/s</div>
 
 <script>
 const $ = id => document.getElementById(id);
-let spd = 0.25, iv = null, adir = null;
-const MOVES = {fwd:[1,0], back:[-1,0], left:[0,1], right:[0,-1]};
+let spd = 0.25, iv = null, adir = null, arcTog = false, axSwap = false;
+
+// [lin_factor, ang_factor] — diagonal corners alternate fwd+turn for arc approx
+const MOVES_NORMAL = {
+  fwd:[1,0], back:[-1,0], left:[0,1], right:[0,-1],
+  fl:[1,1],  fr:[1,-1],   bl:[-1,-1], br:[-1,1]
+};
+// Swapped axes: ▲ turns, ◄► moves fwd/back (for chassis mounted 90deg off)
+const MOVES_SWAP = {
+  fwd:[0,1], back:[0,-1], left:[-1,0], right:[1,0],
+  fl:[1,1],  fr:[1,-1],   bl:[-1,-1], br:[-1,1]
+};
+let MOVES = MOVES_NORMAL;
+
+function toggleAxes() {
+  axSwap = !axSwap;
+  MOVES = axSwap ? MOVES_SWAP : MOVES_NORMAL;
+  const btn = $('axbtn');
+  btn.textContent = axSwap ? 'Axes: Swapped' : 'Axes: Normal';
+  btn.className = axSwap ? 'axswap on' : 'axswap';
+  stop();
+}
 
 function send(lin, ang) {
   fetch('/cmd', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({linear:lin, angular:ang})}).catch(()=>{});
-  $('vel').textContent = 'v: ' + lin.toFixed(2) + ' m/s   \u03c9: ' + ang.toFixed(2) + ' rad/s';
+    body:JSON.stringify({linear:lin, angular:ang})}).catch(()=>{});
+  $('vel').textContent = 'v: '+lin.toFixed(2)+' m/s   \u03c9: '+ang.toFixed(2)+' rad/s';
 }
 
 function go(dir) {
-  if (adir && adir !== dir) { $('b-'+adir).classList.remove('pressed'); }
+  if (adir && adir !== dir) $('b-'+adir).classList.remove('pressed');
   adir = dir;
   $('b-'+dir).classList.add('pressed');
-  const [lf,af] = MOVES[dir];
-  const lin = lf * spd, ang = af * Math.max(0.5, spd * 2.5);
-  send(lin, ang);
-  if (!iv) iv = setInterval(() => send(lin, ang), 100);
+  const [lf, af] = MOVES[dir];
+  const isDiag = lf !== 0 && af !== 0;
+  const lin = lf * spd;
+  const ang = af * Math.max(0.5, spd * 2.5);
+  if (!isDiag) {
+    send(lin, ang);
+    if (!iv) iv = setInterval(() => send(lin, ang), 100);
+  } else {
+    arcTog = false; send(lin, 0);
+    if (!iv) iv = setInterval(() => { arcTog = !arcTog; send(arcTog ? 0 : lin, arcTog ? ang : 0); }, 150);
+  }
 }
 
 function stop() {
@@ -754,7 +799,7 @@ function stop() {
   send(0, 0);
 }
 
-['fwd','back','left','right'].forEach(d => {
+['fwd','back','left','right','fl','fr','bl','br'].forEach(d => {
   const el = $('b-'+d);
   el.addEventListener('touchstart', e => { e.preventDefault(); go(d); }, {passive:false});
   el.addEventListener('touchend',   e => { e.preventDefault(); stop(); }, {passive:false});
@@ -770,11 +815,68 @@ document.addEventListener('keydown', e => {
   if (e.repeat) return;
   const m = {ArrowUp:'fwd',ArrowDown:'back',ArrowLeft:'left',ArrowRight:'right'};
   if (m[e.key]) { e.preventDefault(); go(m[e.key]); }
-  else if (e.key===' ') { e.preventDefault(); stop(); }
+  else if (e.key === ' ') { e.preventDefault(); stop(); }
 });
 document.addEventListener('keyup', e => {
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) stop();
 });
+
+// ── E-Stop ────────────────────────────────────────────────────────────────────
+let estopped = false;
+function toggleEstop() {
+  stop();
+  fetch('/estop', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({reset: estopped})}).catch(()=>{});
+}
+function setEstopUI(active) {
+  estopped = active;
+  const btn = $('estop-btn'), lbl = $('es-lbl'), sub = $('es-sub');
+  if (active) {
+    btn.className = 'estop-btn es-act';
+    lbl.textContent = '\u26a0 Movement Disabled';
+    sub.textContent = 'Tap to Reset E-Stop';
+  } else {
+    btn.className = 'estop-btn es-ok';
+    lbl.textContent = '\u2713 Movement Allowed';
+    sub.textContent = 'Tap to Activate E-Stop';
+  }
+}
+
+// ── LIDAR radar ───────────────────────────────────────────────────────────────
+const cvs = $('lc'), ctx = cvs.getContext('2d');
+const CW = cvs.width, CH = cvs.height, cx = CW/2, cy = CH/2, maxR = cx - 6;
+const MAX_D = 3.0;
+function drawLidar(pts, ts) {
+  ctx.clearRect(0, 0, CW, CH);
+  ctx.strokeStyle = '#1e2233'; ctx.lineWidth = 1;
+  [1,2,3].forEach(i => { ctx.beginPath(); ctx.arc(cx, cy, maxR*i/3, 0, 6.283); ctx.stroke(); });
+  ctx.beginPath(); ctx.moveTo(cx,4); ctx.lineTo(cx,CH-4); ctx.moveTo(4,cy); ctx.lineTo(CW-4,cy); ctx.stroke();
+  const age = ts > 0 ? (Date.now()/1000 - ts) : 99;
+  ctx.globalAlpha = age > 2 ? 0.3 : 1.0;
+  if (pts && pts.length) {
+    pts.forEach(([a, d]) => {
+      const dist = Math.min(d, MAX_D), s = (maxR / MAX_D) * dist;
+      const px = cx + Math.sin(a) * s, py = cy + Math.cos(a) * s;
+      const t = dist / MAX_D;
+      ctx.fillStyle = 'rgb('+Math.round(239*(1-t)+34*t)+','+Math.round(68*(1-t)+197*t)+','+Math.round(68*(1-t)+94*t)+')';
+      ctx.fillRect(px-1.5, py-1.5, 3, 3);
+    });
+  }
+  ctx.globalAlpha = 1.0;
+  ctx.fillStyle = '#94a3b8';
+  ctx.beginPath(); ctx.moveTo(cx, cy-9); ctx.lineTo(cx-6, cy+6); ctx.lineTo(cx+6, cy+6); ctx.closePath(); ctx.fill();
+}
+
+// ── Poll metrics ──────────────────────────────────────────────────────────────
+function poll() {
+  fetch('/metrics').then(r => r.json()).then(d => {
+    const li = d.lidar || {};
+    drawLidar(li.pts || [], li.ts || 0);
+    const es = (d.status || {}).emergency_stop;
+    if (es != null) setEstopUI(es);
+  }).catch(() => {});
+}
+drawLidar([], 0); poll(); setInterval(poll, 400);
 </script>
 </body>
 </html>"""
@@ -850,6 +952,20 @@ class _Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._respond(400, 'application/json',
                               json.dumps({'error': str(exc)}).encode())
+        elif self.path == '/estop':
+            try:
+                length = int(self.headers.get('Content-Length', 0))
+                data   = json.loads(self.rfile.read(length))
+                if _node is not None:
+                    req = Trigger.Request()
+                    if data.get('reset', False):
+                        _node._reset_estop_client.call_async(req)
+                    else:
+                        _node._estop_client.call_async(req)
+                self._respond(200, 'application/json', b'{"ok":true}')
+            except Exception as exc:
+                self._respond(400, 'application/json',
+                              json.dumps({'error': str(exc)}).encode())
         else:
             self.send_response(404); self.end_headers()
 
@@ -884,7 +1000,9 @@ class RobotDashboardNode(Node):
         self.create_subscription(String,    '/navigation/debug',              self._on_nav_debug,  10)
         self.create_subscription(LaserScan, '/scan',                          self._on_scan, sensor_qos)
 
-        self._nav_mode_client = self.create_client(SetBool, '/set_autonomous_mode')
+        self._nav_mode_client    = self.create_client(SetBool, '/set_autonomous_mode')
+        self._estop_client       = self.create_client(Trigger, '/motor/emergency_stop')
+        self._reset_estop_client = self.create_client(Trigger, '/motor/reset_emergency_stop')
         self._last_scan_ts = 0.0  # throttle scan processing to ~2 Hz for dashboard
 
         self._cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
