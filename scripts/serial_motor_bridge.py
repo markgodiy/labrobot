@@ -349,6 +349,13 @@ class SerialMotorBridge(Node):
         odom.pose.pose.orientation.w = math.cos(self.odom_theta / 2.0)
         odom.twist.twist.linear.x  = vx
         odom.twist.twist.angular.z = wz
+        # Non-zero covariance required by AMCL for sensor fusion weighting.
+        # Row-major 6×6 diagonal; indices: 0=x, 7=y, 14=z, 21=roll, 28=pitch, 35=yaw
+        odom.pose.covariance[0]  = 0.01   # x
+        odom.pose.covariance[7]  = 0.01   # y
+        odom.pose.covariance[35] = 0.05   # yaw
+        odom.twist.covariance[0]  = 0.01  # vx
+        odom.twist.covariance[35] = 0.05  # wz
         self.odom_publisher.publish(odom)
 
         # Broadcast TF: odom -> base_footprint
@@ -448,23 +455,35 @@ class SerialMotorBridge(Node):
             self.last_cmd_vel_time = None
 
     def handle_twist(self, msg):
-        """Handle Twist message for direct movement control"""
+        """Handle Twist message for direct movement control.
+
+        Nav2 (DWB controller) outputs linear.x up to ~0.22 m/s and angular.z up
+        to ~1.0 rad/s.  The motors need at least 85% PWM duty to move reliably,
+        so we map the Nav2 full-scale output to 85–100% motor power rather than
+        the raw percentage which would be 22% (below the movement threshold).
+        """
         linear_x = msg.linear.x
         angular_z = msg.angular.z
 
-        # Convert twist to motor commands
-        if abs(linear_x) > 0.1:  # Forward/backward movement
+        MAX_LINEAR_MS  = 0.22   # m/s — matches nav2_params max_vel_x
+        MAX_ANGULAR_RS = 1.0    # rad/s — matches nav2_params max_vel_theta
+        MOTOR_MIN      = 85     # minimum effective PWM %
+        MOTOR_MAX      = 100
+
+        if abs(linear_x) > 0.02:
             direction = "forward" if linear_x > 0 else "backward"
-            speed = min(100, int(abs(linear_x) * 100))  # Scale to percentage
+            ratio = min(1.0, abs(linear_x) / MAX_LINEAR_MS)
+            speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
             self.send_command_async({
                 "cmd": "move",
                 "dir": direction,
                 "speed": speed
             })
             self.last_cmd_vel_time = time.time()
-        elif abs(angular_z) > 0.1:  # Rotation
+        elif abs(angular_z) > 0.05:
             direction = "left" if angular_z > 0 else "right"
-            speed = min(100, int(abs(angular_z) * 50))  # Scale to percentage
+            ratio = min(1.0, abs(angular_z) / MAX_ANGULAR_RS)
+            speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
             self.send_command_async({
                 "cmd": "rotate",
                 "dir": direction,

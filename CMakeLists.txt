@@ -33,7 +33,7 @@ if(BUILD_TESTING)
 endif()
 
 install(
-  DIRECTORY config description launch worlds scripts upython
+  DIRECTORY config description launch worlds scripts upython maps notes
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -61,6 +61,8 @@ install(PROGRAMS
   launch/pi.full.launch.py
   launch/pi.lidar.depthsensor.launch.py
   launch/pi.lidar.launch.py
+  launch/pi.lab.mapping.launch.py
+  launch/pi.lab.nav.launch.py
   launch/rsp_gz.launch.py
   launch/rsp.launch.py
   launch/sim.launch.py
