@@ -128,6 +128,14 @@ def generate_launch_description():
         parameters=[slam_params],
     )
 
+    # Dashboard — web UI at :8080 with LIDAR radar + D-pad / arrow key control
+    robot_dashboard = Node(
+        package='labrobot',
+        executable='robot_dashboard.py',
+        name='robot_dashboard',
+        parameters=[{'use_sim_time': False}],
+    )
+
     # Lifecycle manager — configures and activates slam_toolbox automatically
     lifecycle_manager = Node(
         package='nav2_lifecycle_manager',
@@ -149,4 +157,5 @@ def generate_launch_description():
         serial_motor_bridge,
         slam_toolbox,
         lifecycle_manager,
+        robot_dashboard,
     ])
