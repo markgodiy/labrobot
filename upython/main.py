@@ -325,13 +325,13 @@ def _ramp(new_speed, left_fn, right_fn):
         _set_dir(_lf, _rs)              # left fwd, right off
         ena_pwm.duty_u16(_ANTISTICTION_PWM)
         enb_pwm.duty_u16(0)
-        sleep_ms(30)                    # ~1–2 mm of movement at most
-        nav.left_dir = 0
-        _ls()                           # brief brake to avoid H-bridge shoot-through
+        sleep_ms(150)                   # 150ms forward pulse — warms brushes; longer gives same counts (stall-limited)
+        # Disable PWM before direction change — no shoot-through since PWM=0.
+        # Skip the brake dead-time: a hard stop re-engages the stiction we just broke.
         ena_pwm.duty_u16(0)
-        sleep_ms(15)
         nav.left_dir = saved_left_dir   # restore -1 so encoder counts backward motion
-        nav.current_speed = 0           # ramp starts fresh in the real direction
+        # Jump straight to target speed — gradual ramp can't restart a cold brush.
+        nav.current_speed = nav.target_speed - 1
     while nav.current_speed != nav.target_speed:
         if nav.estop:
             return
