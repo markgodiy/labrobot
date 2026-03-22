@@ -128,6 +128,18 @@ def generate_launch_description():
         parameters=[slam_params],
     )
 
+    # Lifecycle manager — configures and activates slam_toolbox automatically
+    lifecycle_manager = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager_slam',
+        parameters=[{
+            'use_sim_time': False,
+            'autostart': True,
+            'node_names': ['slam_toolbox'],
+        }],
+    )
+
     return LaunchDescription([
         serial_port_arg,
         robot_state_publisher,
@@ -135,4 +147,5 @@ def generate_launch_description():
         sllidar,
         serial_motor_bridge,
         slam_toolbox,
+        lifecycle_manager,
     ])
