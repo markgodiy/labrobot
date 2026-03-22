@@ -470,22 +470,26 @@ class SerialMotorBridge(Node):
         MOTOR_MIN      = 85     # minimum effective PWM %
         MOTOR_MAX      = 100
 
+        # NOTE: motors are physically wired with one motor inverted, so the Pico
+        # "rotate" command causes linear translation and "move" causes rotation.
+        # Mapping verified empirically: rotate-right=forward, move-backward=rotate-CW.
         if abs(linear_x) > 0.02:
-            direction = "forward" if linear_x > 0 else "backward"
+            direction = "right" if linear_x > 0 else "left"
             ratio = min(1.0, abs(linear_x) / MAX_LINEAR_MS)
             speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
             self.send_command_async({
-                "cmd": "move",
+                "cmd": "rotate",
                 "dir": direction,
                 "speed": speed
             })
             self.last_cmd_vel_time = time.time()
         elif abs(angular_z) > 0.05:
-            direction = "left" if angular_z > 0 else "right"
+            # angular_z > 0 = CCW (left turn) = move-forward; < 0 = CW (right turn) = move-backward
+            direction = "forward" if angular_z > 0 else "backward"
             ratio = min(1.0, abs(angular_z) / MAX_ANGULAR_RS)
             speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
             self.send_command_async({
-                "cmd": "rotate",
+                "cmd": "move",
                 "dir": direction,
                 "speed": speed
             })
