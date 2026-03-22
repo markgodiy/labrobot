@@ -109,9 +109,14 @@ class SerialMotorBridge(Node):
             10
         )
         
+        # cmd_vel watchdog — stop motors if no cmd_vel arrives for 5s while moving
+        self.last_cmd_vel_time = None  # None = not moving via cmd_vel
+        self.cmd_vel_watchdog_timeout = 5.0
+
         # Timers
         self.status_timer = self.create_timer(1.0, self.request_status)
         self.encoder_timer = self.create_timer(1.0 / encoder_poll_hz, self.poll_encoders)
+        self.cmd_vel_watchdog_timer = self.create_timer(1.0, self.check_cmd_vel_watchdog)
         
         # Initialize serial connection
         self.connect_serial()
@@ -150,8 +155,8 @@ class SerialMotorBridge(Node):
             # Verify connection with a ping before accepting service calls
             self.connected = True
             self.get_logger().info(f"Connected to {self.serial_port}")
-            response = self.send_command({"cmd": "status"}, timeout=3.0)
-            if response and (response.get("type") == "status" or response.get("status") == "ok"):
+            response = self.send_command({"cmd": "ping"}, timeout=3.0)
+            if response and response.get("status") == "ok":
                 self.get_logger().info("MicroPython controller responded successfully")
             else:
                 self.get_logger().warn("No valid response from MicroPython controller")
@@ -195,7 +200,7 @@ class SerialMotorBridge(Node):
                                 try:
                                     response = json.loads(line)
                                     # Skip async push messages — keep reading for the command response
-                                    if response.get("type") in ("log", "heartbeat", "battery"):
+                                    if "type" in response:
                                         continue
                                     return response
                                 except json.JSONDecodeError as e:
@@ -245,36 +250,33 @@ class SerialMotorBridge(Node):
             
             try:
                 if self.ser and self.ser.is_open:
-                    # Check for available data with timeout
-                    if self.ser.in_waiting > 0:
-                        # Read available data in chunks
-                        data = self.ser.read(min(self.ser.in_waiting, 1024)).decode('utf-8', errors='ignore')
-                        response_buffer += data
-                        
-                        # Process complete lines
-                        while '\n' in response_buffer:
-                            line, response_buffer = response_buffer.split('\n', 1)
-                            line = line.strip()
-                            
-                            if line:
-                                # Try to parse as JSON
-                                if line.startswith('{') and line.endswith('}'):
-                                    try:
-                                        msg = json.loads(line)
-                                        self.process_incoming_message(msg)
-                                    except json.JSONDecodeError as e:
-                                        # Log partial JSON for debugging
-                                        if len(line) > 50:
-                                            self.get_logger().warn(f"JSON decode error: {e} for line: {line[:50]}...")
-                                        else:
-                                            self.get_logger().warn(f"JSON decode error: {e} for line: {line}")
-                                        self.publish_log(f"Raw data: {line}")
-                                else:
-                                    # Plain text message
-                                    self.publish_log(line)
-                    else:
-                        # No data available, small sleep
-                        time.sleep(0.1)
+                    if not self.serial_lock.acquire(blocking=False):
+                        time.sleep(0.01)
+                        continue
+                    try:
+                        if self.ser.in_waiting > 0:
+                            data = self.ser.read(min(self.ser.in_waiting, 1024)).decode('utf-8', errors='ignore')
+                            response_buffer += data
+                            while '\n' in response_buffer:
+                                line, response_buffer = response_buffer.split('\n', 1)
+                                line = line.strip()
+                                if line:
+                                    if line.startswith('{') and line.endswith('}'):
+                                        try:
+                                            msg = json.loads(line)
+                                            self.process_incoming_message(msg)
+                                        except json.JSONDecodeError as e:
+                                            if len(line) > 50:
+                                                self.get_logger().warn(f"JSON decode error: {e} for line: {line[:50]}...")
+                                            else:
+                                                self.get_logger().warn(f"JSON decode error: {e} for line: {line}")
+                                            self.publish_log(f"Raw data: {line}")
+                                    else:
+                                        self.publish_log(line)
+                        else:
+                            time.sleep(0.1)
+                    finally:
+                        self.serial_lock.release()
                 else:
                     time.sleep(1.0)
                     
@@ -436,11 +438,20 @@ class SerialMotorBridge(Node):
         
         return response
     
+    def check_cmd_vel_watchdog(self):
+        """Stop motors if cmd_vel has gone silent while robot was moving"""
+        if self.last_cmd_vel_time is None:
+            return
+        if time.time() - self.last_cmd_vel_time > self.cmd_vel_watchdog_timeout:
+            self.get_logger().warn("cmd_vel watchdog: no command for 5s, stopping motors")
+            self.send_command_async({"cmd": "stop"})
+            self.last_cmd_vel_time = None
+
     def handle_twist(self, msg):
         """Handle Twist message for direct movement control"""
         linear_x = msg.linear.x
         angular_z = msg.angular.z
-        
+
         # Convert twist to motor commands
         if abs(linear_x) > 0.1:  # Forward/backward movement
             direction = "forward" if linear_x > 0 else "backward"
@@ -450,6 +461,7 @@ class SerialMotorBridge(Node):
                 "dir": direction,
                 "speed": speed
             })
+            self.last_cmd_vel_time = time.time()
         elif abs(angular_z) > 0.1:  # Rotation
             direction = "left" if angular_z > 0 else "right"
             speed = min(100, int(abs(angular_z) * 50))  # Scale to percentage
@@ -458,9 +470,11 @@ class SerialMotorBridge(Node):
                 "dir": direction,
                 "speed": speed
             })
+            self.last_cmd_vel_time = time.time()
         else:
-            # Stop if no significant movement
+            # Explicit stop — clear watchdog
             self.send_command_async({"cmd": "stop"})
+            self.last_cmd_vel_time = None
     
     # Public methods for other nodes to use
     def move_robot(self, direction, speed, duration=0):

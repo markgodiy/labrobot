@@ -8,9 +8,12 @@ Serial protocol (USB, 115200 baud):
               {"type": "status"|"heartbeat"|"battery"|"log", ...}\n
 
 Motor A (Left):  ENA=GP2, IN1=GP3, IN2=GP4
-Motor B (Right): ENB=GP8, IN3=GP6, IN4=GP7
-Encoder Left:    A=GP9,  B=GP10
-Encoder Right:   A=GP11, B=GP12
+
+Motor B (Right): ENB=GP10, IN3=GP11, IN4=GP12  ← confirmed by pin_discover.py
+H-Bridge STBY:   GP5=left, GP13=right (must be HIGH; two separate H-bridge ICs)
+
+Encoder Left:    A=GP16, B=GP17  ← confirmed by pin_discover.py
+Encoder Right:   A=GP18, B=GP19  ← confirmed by pin_discover.py
 INA219 (I2C1):   SDA=GP14, SCL=GP15
 """
 
@@ -18,7 +21,7 @@ import gc
 import select
 import sys
 import ujson
-from machine import I2C, PWM, Pin, Timer
+from machine import ADC, I2C, PWM, Pin, Timer
 from time import sleep, sleep_ms, ticks_diff, ticks_ms
 
 # Non-blocking stdin poll (sys.stdin.any() not available on MicroPython v1.26+)
@@ -39,21 +42,25 @@ MM_PER_PULSE = WHEEL_CIRCUMFERENCE_MM / PULSES_PER_REV
 # ---------------------------------------------------------------------------
 led = Pin("LED", Pin.OUT)
 
+stby_l = Pin(5,  Pin.OUT); stby_l.high()     # Left H-bridge STBY — must be HIGH to enable
+stby_r = Pin(13, Pin.OUT); stby_r.high()     # Right H-bridge STBY
+
 ena_pwm = PWM(Pin(2)); ena_pwm.freq(1000)   # Left enable
 in1 = Pin(3, Pin.OUT)                        # Left dir 1
 in2 = Pin(4, Pin.OUT)                        # Left dir 2
 
-enb_pwm = PWM(Pin(8)); enb_pwm.freq(1000)   # Right enable
-in3 = Pin(6, Pin.OUT)                        # Right dir 1
-in4 = Pin(7, Pin.OUT)                        # Right dir 2
+enb_pwm = PWM(Pin(10)); enb_pwm.freq(1000)   # Right enable
+in3 = Pin(11, Pin.OUT)                       # Right dir 1
+in4 = Pin(12, Pin.OUT)                       # Right dir 2
 
 # ---------------------------------------------------------------------------
 # Encoder hardware
 # ---------------------------------------------------------------------------
-left_enc_a  = Pin(9,  Pin.IN, Pin.PULL_UP)
-left_enc_b  = Pin(10, Pin.IN, Pin.PULL_UP)
-right_enc_a = Pin(11, Pin.IN, Pin.PULL_UP)
-right_enc_b = Pin(12, Pin.IN, Pin.PULL_UP)
+left_enc_a  = Pin(16, Pin.IN, Pin.PULL_UP)
+left_enc_b  = Pin(17, Pin.IN, Pin.PULL_UP)
+
+right_enc_a = Pin(18, Pin.IN, Pin.PULL_UP)
+right_enc_b = Pin(19, Pin.IN, Pin.PULL_UP)
 
 # ---------------------------------------------------------------------------
 # INA219 battery sensor (optional — degrades gracefully if absent)
@@ -71,50 +78,28 @@ except Exception as _e:
 # Encoder state
 # ---------------------------------------------------------------------------
 class EncoderState:
-    __slots__ = (
-        "left_count", "right_count",
-        "left_last_a", "left_last_b",
-        "right_last_a", "right_last_b",
-    )
+    __slots__ = ("left_count", "right_count")
 
     def __init__(self):
-        self.left_count   = 0
-        self.right_count  = 0
-        self.left_last_a  = left_enc_a.value()
-        self.left_last_b  = left_enc_b.value()
-        self.right_last_a = right_enc_a.value()
-        self.right_last_b = right_enc_b.value()
+        self.left_count  = 0
+        self.right_count = 0
 
 
 enc = EncoderState()
 
 
+# Simple directional edge counting on A-channel only.
+# nav.left_dir / nav.right_dir are set to +1/-1 by _move()/_rotate()
+# and cleared to 0 by _smooth_stop()/_emergency_stop().
+# Avoids the soft-IRQ timing problem: quadrature phase offset (~250 µs) is
+# shorter than the MicroPython soft-IRQ delivery delay, so quadrature decoding
+# in a handler always sees both channels in the same state → net 0 count.
 def _update_left(_pin):
-    a = left_enc_a.value()
-    b = left_enc_b.value()
-    if a != enc.left_last_a:
-        enc.left_count += 1 if a != b else -1
-        enc.left_last_a = a
-    if b != enc.left_last_b:
-        enc.left_count += 1 if a == b else -1
-        enc.left_last_b = b
+    enc.left_count += nav.left_dir
 
 
 def _update_right(_pin):
-    a = right_enc_a.value()
-    b = right_enc_b.value()
-    if a != enc.right_last_a:
-        enc.right_count += 1 if a == b else -1   # right side physically reversed
-        enc.right_last_a = a
-    if b != enc.right_last_b:
-        enc.right_count += 1 if a != b else -1
-        enc.right_last_b = b
-
-
-left_enc_a.irq( trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=_update_left)
-left_enc_b.irq( trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=_update_left)
-right_enc_a.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=_update_right)
-right_enc_b.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=_update_right)
+    enc.right_count += nav.right_dir
 
 
 def _encoder_data():
@@ -154,9 +139,16 @@ class NavState:
         self.json_errors         = 0
         self.last_heartbeat_time = ticks_ms()
         self.heartbeat_ms        = 5000
+        self.left_dir            = 0   # +1 forward, -1 backward, 0 stopped
+        self.right_dir           = 0
 
 
 nav = NavState()
+
+# Attach encoder IRQs after nav is defined — handlers reference nav.left_dir/right_dir.
+# B-channel IRQs removed — A-channel alone gives 2000 pulses/s per direction.
+left_enc_a.irq( trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=_update_left)
+right_enc_a.irq(trigger=Pin.IRQ_RISING | Pin.IRQ_FALLING, handler=_update_right)
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +328,8 @@ def _ramp(new_speed, left_fn, right_fn):
 def _move(speed, lf, rf, duration):
     if nav.estop:
         return False
+    nav.left_dir        = 1 if lf is _lf else -1
+    nav.right_dir       = 1 if rf is _rf else -1
     nav.is_moving       = True
     nav.move_start_time = ticks_ms()
     nav.move_duration   = int(duration * 1000) if duration > 0 else 0
@@ -347,6 +341,8 @@ def _move(speed, lf, rf, duration):
 def _rotate(speed, lf, rf, duration):
     if nav.estop:
         return False
+    nav.left_dir       = 1 if lf is _lf else -1
+    nav.right_dir      = 1 if rf is _rf else -1
     nav.is_moving      = True
     nav.rot_start_time = ticks_ms()
     nav.rot_duration   = int(duration * 1000) if duration > 0 else 0
@@ -356,15 +352,19 @@ def _rotate(speed, lf, rf, duration):
 
 
 def _smooth_stop():
+    nav.left_dir      = 0
+    nav.right_dir     = 0
     nav.is_moving     = False
     nav.move_duration = 0
     nav.rot_duration  = 0
     _ramp(0, _ls, _rs)
     nav.current_speed = 0
-    led.off()
+    # LED stays on — operational state (estop cleared) persists after stop
 
 
 def _emergency_stop():
+    nav.left_dir      = 0
+    nav.right_dir     = 0
     nav.estop         = True
     nav.is_moving     = False
     nav.current_speed = 0
@@ -376,6 +376,16 @@ def _emergency_stop():
         led.toggle(); sleep_ms(100)
     led.off()
     _log("EMERGENCY STOP ACTIVATED", "WARN")
+
+
+# ---------------------------------------------------------------------------
+# Pico system helpers
+# ---------------------------------------------------------------------------
+_temp_adc = ADC(4)
+
+def _cpu_temp_c():
+    v = _temp_adc.read_u16() * (3.3 / 65535)
+    return round(27 - (v - 0.706) / 0.001721, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +405,8 @@ def _status_dict():
         "encoder":           _encoder_data(),
         "battery":           batt.last_reading if batt.available else None,
         "version":           "3.0.0",
+        "cpu_temp_c":        _cpu_temp_c(),
+        "led_on":            bool(led.value()),
     }
     return d
 
@@ -411,6 +423,8 @@ def _heartbeat_dict():
         "errors":     nav.total_errors,
         "encoder":    _encoder_data(),
         "battery":    batt.last_reading if batt.available else None,
+        "cpu_temp_c": _cpu_temp_c(),
+        "led_on":     bool(led.value()),
     }
 
 
@@ -460,6 +474,7 @@ def _handle(cmd_dict):
 
         elif cmd == "reset_estop":
             nav.estop = False
+            led.on()
             _log("Emergency stop reset")
             return {"status": "ok", "message": "estop reset"}
 

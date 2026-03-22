@@ -81,6 +81,11 @@ class AutonomousNavigationNode(Node):
         self.latest_controller_status = None
         self.latest_odometry = None  # Encoder-based odometry data
         self.navigation_active = False
+
+        # Sensor freshness tracking — prevent stale data from driving robot indefinitely
+        self.latest_scan_time = None
+        self.latest_depth_time = None
+        self.sensor_timeout = 2.0  # seconds before sensor data is considered stale
         
         # CV Bridge for image processing
         self.bridge = CvBridge()
@@ -270,11 +275,13 @@ class AutonomousNavigationNode(Node):
         """Process LIDAR scan data"""
         with self.state_lock:
             self.latest_scan = msg
-    
+            self.latest_scan_time = time.time()
+
     def depth_callback(self, msg):
         """Process depth camera data"""
         with self.state_lock:
             self.latest_depth_image = msg
+            self.latest_depth_time = time.time()
     
     def rgb_callback(self, msg):
         """Process RGB camera data"""
@@ -410,8 +417,14 @@ class AutonomousNavigationNode(Node):
             return
 
         with self.state_lock:
-            scan_data = self.latest_scan
-            depth_data = self.latest_depth_image
+            now = time.time()
+            # Discard sensor data older than sensor_timeout — prevents driving on stale LIDAR
+            scan_data = self.latest_scan if (
+                self.latest_scan_time and now - self.latest_scan_time < self.sensor_timeout
+            ) else None
+            depth_data = self.latest_depth_image if (
+                self.latest_depth_time and now - self.latest_depth_time < self.sensor_timeout
+            ) else None
         
         # Check for stuck behavior first
         is_stuck, stuck_reason = self.is_stuck()
@@ -535,53 +548,41 @@ class AutonomousNavigationNode(Node):
         """Service callback for emergency stop"""
         self.emergency_stop_active = True
         self.autonomous_enabled = False
-        
-        # Send emergency stop via motor bridge
+
+        # Send stop via cmd_vel (fire-and-forget, safe to call from callback context)
+        self.send_movement_command(0.0, 0.0)
+
+        # Also fire async estop to bridge — don't spin_until_future_complete (deadlock risk)
         try:
             estop_request = Trigger.Request()
-            future = self.motor_emergency_stop_client.call_async(estop_request)
-            rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-            
-            if future.result() is not None and future.result().success:
-                response.success = True
-                response.message = "Emergency stop activated"
-                self.get_logger().warn("EMERGENCY STOP ACTIVATED")
-            else:
-                response.success = False
-                response.message = "Failed to activate emergency stop"
+            self.motor_emergency_stop_client.call_async(estop_request)
         except Exception as e:
-            response.success = False
-            response.message = f"Emergency stop error: {e}"
-        
+            self.get_logger().error(f"Async estop send error: {e}")
+
+        self.get_logger().warn("EMERGENCY STOP ACTIVATED")
+        response.success = True
+        response.message = "Emergency stop activated"
         return response
     
     def set_autonomous_mode_callback(self, request, response):
         """Service callback for setting autonomous mode"""
         self.autonomous_enabled = request.data
-        
-        # Send mode change via motor bridge
+        self.get_logger().info(f"Autonomous mode {'ENABLED' if self.autonomous_enabled else 'DISABLED'}")
+
+        # Fire async — don't spin_until_future_complete from within a callback (deadlock)
         try:
             mode_request = SetBool.Request()
             mode_request.data = self.autonomous_enabled
-            future = self.motor_autonomous_mode_client.call_async(mode_request)
-            rclpy.spin_until_future_complete(self, future, timeout_sec=2.0)
-            
-            if future.result() is not None and future.result().success:
-                response.success = True
-                response.message = f"Autonomous mode {'enabled' if self.autonomous_enabled else 'disabled'}"
-                self.get_logger().info(f"Autonomous mode {'ENABLED' if self.autonomous_enabled else 'DISABLED'}")
-                
-                if not self.autonomous_enabled:
-                    # Stop current movement
-                    self.stop_movement()
-                    self.update_action_history("idle")
-            else:
-                response.success = False
-                response.message = "Failed to set autonomous mode"
+            self.motor_autonomous_mode_client.call_async(mode_request)
         except Exception as e:
-            response.success = False
-            response.message = f"Autonomous mode error: {e}"
-        
+            self.get_logger().error(f"Async autonomous mode send error: {e}")
+
+        if not self.autonomous_enabled:
+            self.send_movement_command(0.0, 0.0)
+            self.update_action_history("idle")
+
+        response.success = True
+        response.message = f"Autonomous mode {'enabled' if self.autonomous_enabled else 'disabled'}"
         return response
     
     def reset_emergency_stop_callback(self, request, response):

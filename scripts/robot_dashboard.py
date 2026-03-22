@@ -429,12 +429,10 @@ function togglePause() {
 }
 
 function copyAllLogs() {
-  const lines = Array.from(.children).map(el => el.textContent);
-  navigator.clipboard.writeText(lines.join('
-')).catch(() => {
+  const lines = Array.from($('logbox').children).map(el => el.textContent);
+  navigator.clipboard.writeText(lines.join('\\n')).catch(() => {
     const ta = document.createElement('textarea');
-    ta.value = lines.join('
-');
+    ta.value = lines.join('\\n');
     document.body.appendChild(ta); ta.select();
     document.execCommand('copy'); document.body.removeChild(ta);
   });
