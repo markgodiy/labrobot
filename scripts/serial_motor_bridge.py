@@ -528,20 +528,21 @@ class SerialMotorBridge(Node):
         MOTOR_MIN      = 85     # minimum effective PWM %
         MOTOR_MAX      = 100
 
-        # Motor wiring (verified empirically): one motor is physically inverted.
-        # set_speed controls left/right PWM directly without ramping.
+        # Motor wiring: verified via encoder test (2026-03-25).
+        # left_dir=+1 → left encoder increases (physically forward)
+        # right_dir=+1 → right encoder increases (physically forward)
         # Pin direction mapping:
-        #   forward  = left_dir=+1, right_dir=-1  (was: rotate-right)
-        #   backward = left_dir=-1, right_dir=+1  (was: rotate-left)
-        #   CCW turn = left_dir=+1, right_dir=+1  (was: move-forward)
-        #   CW turn  = left_dir=-1, right_dir=-1  (was: move-backward)
+        #   forward  = left_dir=+1, right_dir=+1
+        #   backward = left_dir=-1, right_dir=-1
+        #   CCW turn = left_dir=-1, right_dir=+1  (left back, right fwd)
+        #   CW turn  = left_dir=+1, right_dir=-1  (left fwd, right back)
         if abs(linear_x) > 0.02 and not self.path_clear:
             self.send_command_async({"cmd": "stop"})
             self.last_cmd_vel_time = None
             return
 
         if abs(linear_x) > 0.02:
-            left_dir, right_dir = (1, -1) if linear_x > 0 else (-1, 1)
+            left_dir, right_dir = (1, 1) if linear_x > 0 else (-1, -1)
             ratio = min(1.0, abs(linear_x) / MAX_LINEAR_MS)
             speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
             self.send_command_async({
@@ -551,7 +552,7 @@ class SerialMotorBridge(Node):
             self.last_cmd_vel_time = time.time()
         elif abs(angular_z) > 0.05:
             # angular_z > 0 = CCW (left turn); < 0 = CW (right turn)
-            left_dir, right_dir = (1, 1) if angular_z > 0 else (-1, -1)
+            left_dir, right_dir = (-1, 1) if angular_z > 0 else (1, -1)
             ratio = min(1.0, abs(angular_z) / MAX_ANGULAR_RS)
             speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
             self.send_command_async({
