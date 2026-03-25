@@ -34,8 +34,8 @@ Tested by sending set_speed commands and measuring encoder count deltas:
 
 | left_dir | right_dir | Left encoder delta | Right encoder delta | Physical motion |
 |----------|-----------|-------------------|--------------------|----|
-| +1 | +1 | increases | increases | **Forward** |
-| -1 | -1 | decreases | decreases | **Backward** |
+| -1 | -1 | decreases | decreases | **Forward** |
+| +1 | +1 | increases | increases | **Backward** |
 | -1 | +1 | decreases | increases | **CCW (left turn)** |
 | +1 | -1 | increases | decreases | **CW (right turn)** |
 
@@ -43,7 +43,7 @@ Tested by sending set_speed commands and measuring encoder count deltas:
 
 ```python
 # Forward/backward (linear_x from /cmd_vel)
-left_dir, right_dir = (1, 1) if linear_x > 0 else (-1, -1)
+left_dir, right_dir = (-1, -1) if linear_x > 0 else (1, 1)
 
 # Rotation (angular_z from /cmd_vel)
 # angular_z > 0 = CCW (left turn); < 0 = CW (right turn)
@@ -53,8 +53,8 @@ left_dir, right_dir = (-1, 1) if angular_z > 0 else (1, -1)
 ## Dashboard Arrow Key Chain
 
 ```
-ArrowUp   → 'fwd'   → linear_x=+speed  → (1,1)   → forward
-ArrowDown → 'back'  → linear_x=-speed  → (-1,-1) → backward
+ArrowUp   → 'fwd'   → linear_x=+speed  → (-1,-1) → forward
+ArrowDown → 'back'  → linear_x=-speed  → (1,1)   → backward
 ArrowLeft → 'left'  → angular_z=+speed → (-1,1)  → CCW (left turn)
 ArrowRight→ 'right' → angular_z=-speed → (1,-1)  → CW (right turn)
 ```
