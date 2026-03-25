@@ -330,6 +330,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <hr>
       <div class="row"><span class="lbl tip" data-tip="Power status from vcgencmd. Green=OK, yellow=past event, red=active throttle/undervoltage.">Power</span><span class="val" id="pi-pwr">—</span></div>
       <div class="row"><span class="lbl tip" data-tip="Undervoltage detected (now or since boot). Check USB power supply if not green.">Undervoltage</span><span class="val" id="pi-uv">—</span></div>
+      <hr>
+      <button class="log-btn" style="width:100%;background:#7a1111;color:#fff;border-color:#a33;margin-top:2px;" onclick="doShutdown()">&#9210; Shutdown Robot</button>
     </div>
 
     <!-- Pico W -->
@@ -578,6 +580,13 @@ function resetEstop() {
 function toggleNav() {
   fetch('/nav', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({autonomous: !navEnabled})}).catch(()=>{});
+}
+function doShutdown() {
+  if (!confirm('Shutdown the Pi now?\\n\\nThis will stop all ROS nodes and power off the hardware.')) return;
+  fetch('/system/shutdown', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'})
+    .then(r => r.json())
+    .then(d => alert(d.output || d.error || 'Shutdown initiated.'))
+    .catch(e => alert('Error: ' + e));
 }
 
 // ── lidar radar ───────────────────────────────────────────────────────────────
@@ -2137,6 +2146,13 @@ class _Handler(BaseHTTPRequestHandler):
         elif self.path == '/bridge/restart':
             result = _bridge_restart()
             self._respond(200, 'application/json', json.dumps(result).encode())
+        elif self.path == '/system/shutdown':
+            self._respond(200, 'application/json',
+                          json.dumps({'ok': True, 'output': 'Shutdown initiated. Pi will power off in ~5 seconds.'}).encode())
+            threading.Thread(target=lambda: (
+                __import__('time').sleep(2),
+                subprocess.run(['sudo', '/sbin/shutdown', '-h', 'now'], check=False)
+            ), daemon=True).start()
         else:
             self.send_response(404); self.end_headers()
 
