@@ -45,6 +45,93 @@ Monitor the log:
 tail -f /tmp/stack.log
 ```
 
+> **Always stop any existing stack before starting a new one** — see the section below.
+> Running `ros2 launch` twice causes two stacks to compete for `/dev/ttyACM0` and the OAK-D camera,
+> producing `Resource temporarily unavailable` and `X_LINK_DEVICE_ALREADY_IN_USE` errors.
+
+---
+
+## Stop the stack / clean restart
+
+### Normal stop (when the terminal is still attached)
+
+Press `Ctrl+C` in the terminal running the launch. Wait ~2 s for nodes to exit.
+
+### Stop when running detached (most common case)
+
+Directly `pkill`-ing ROS processes from SSH can drop your SSH session (a process in the tree holds the TTY).
+Use the `nohup` trick to schedule the kill after SSH returns:
+
+```bash
+# Step 1 — schedule the kill (SSH returns immediately)
+nohup bash -c '
+  sleep 1 &&
+  pkill -9 -f "ros2 launch" ;
+  pkill -9 -f serial_motor_bridge ;
+  pkill -9 -f robot_dashboard ;
+  pkill -9 -f autonomous_navigation_node ;
+  pkill -9 -f sllidar_node ;
+  pkill -9 -f camera_node ;
+  pkill -9 -f robot_state_publisher ;
+  pkill -9 -f joint_state_publisher ;
+  pkill -9 -f static_transform_publisher ;
+  pkill -9 -f republish
+' &>/dev/null &
+
+# Step 2 — wait a few seconds, then verify everything is gone
+sleep 5
+ps aux | grep -E 'ros2|serial_motor|camera_node|robot_dash|autonomous|sllidar' | grep -v grep
+# should return nothing (or only the grep itself)
+```
+
+Check devices are free:
+
+```bash
+fuser /dev/ttyACM0   # should return nothing
+fuser /dev/ttyUSB0   # should return nothing
+```
+
+### Clean restart (stop then start)
+
+```bash
+# Kill existing stack (scheduled, SSH-safe)
+nohup bash -c '
+  sleep 1 &&
+  pkill -9 -f "ros2 launch" ;
+  pkill -9 -f serial_motor_bridge ;
+  pkill -9 -f robot_dashboard ;
+  pkill -9 -f autonomous_navigation_node ;
+  pkill -9 -f sllidar_node ;
+  pkill -9 -f camera_node ;
+  pkill -9 -f robot_state_publisher ;
+  pkill -9 -f joint_state_publisher ;
+  pkill -9 -f static_transform_publisher ;
+  pkill -9 -f republish
+' &>/dev/null &
+
+# Wait for processes to die
+sleep 5
+
+# Start fresh
+nohup bash -c '
+  cd ~/lab_ws &&
+  source /opt/ros/jazzy/setup.bash &&
+  source install/setup.bash &&
+  ros2 launch labrobot pi.autonomous.serial.launch.py
+' > /tmp/stack.log 2>&1 &
+
+# Verify after ~8 s
+sleep 8
+pgrep -fa serial_motor_bridge
+pgrep -fa robot_dashboard
+tail -5 /tmp/stack.log
+```
+
+### From the dashboard
+
+Use the **Shutdown Robot** button (Pi System card) for a safe full power-off.
+This stops all nodes and halts the OS — no risk of file corruption from a hard power cut.
+
 ---
 
 ## What the launch file starts
