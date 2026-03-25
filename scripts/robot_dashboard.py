@@ -16,7 +16,9 @@ Publishes:
 Serves:
   GET  /         — HTML dashboard (auto-refreshes at 500 ms via JS)
   GET  /metrics  — JSON snapshot
-  GET  /remote   — Mobile-optimised remote control page
+  GET  /remote   — Mobile control page (remote + follow-me combined)
+  GET  /mfollow  — Alias for /remote (backward compat)
+  GET  /follow   — Desktop follow-me page
   GET  /logs     — Log ring-buffer (JSON, ?since=N for incremental)
   GET  /logs/download — Full log as plain-text file
   POST /cmd      — Publish a Twist or estop  {"linear":0.2,"angular":0.0}
@@ -218,9 +220,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="badge"><span class="dot yellow" id="conn-dot"></span><span id="conn-text">Connecting…</span></div>
 </header>
 <nav class="page-nav">
-  <a href="/remote">&#128241; Mobile Remote</a>
+  <a href="/remote">&#128241; Mobile Control</a>
   <a href="/follow">&#128100; Follow-Me</a>
-  <a href="/mfollow">&#128241; Follow Mobile</a>
   <a href="/flashpico">&#9889; Flash Pico</a>
 </nav>
 
@@ -788,8 +789,7 @@ canvas.lidar-c{border-radius:50%;background:#0a0c14;display:block;margin:0 auto;
   <h1>&#128100; Follow-Me Mode</h1>
   <nav>
     <a href="/">Dashboard</a>
-    <a href="/remote">Remote</a>
-    <a href="/mfollow">&#128241; Mobile</a>
+    <a href="/remote">&#128241; Mobile Control</a>
   </nav>
 </header>
 
@@ -1180,15 +1180,15 @@ setInterval(poll, 500);
 </html>"""
 
 
-# ── Follow-Me mobile page ─────────────────────────────────────────────────────
-MFOLLOW_HTML = """<!DOCTYPE html>
+# ── Combined mobile control page (remote + follow-me) ─────────────────────────
+REMOTE_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>Follow-Me Mobile</title>
+<title>Robot Control</title>
 <style>
 :root{--bg:#0f1117;--card:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;--muted:#8892a4;
       --green:#22c55e;--red:#ef4444;--yellow:#eab308;--blue:#3b82f6;}
@@ -1196,6 +1196,9 @@ MFOLLOW_HTML = """<!DOCTYPE html>
 html,body{min-height:100vh;background:var(--bg);color:var(--text);
           font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;}
 body{display:flex;flex-direction:column;padding:8px;gap:8px;max-width:480px;margin:0 auto;}
+header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+header h1{font-size:.95rem;font-weight:700;}
+a.back{font-size:.78rem;color:var(--muted);text-decoration:none;}
 .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
 .card-title{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
             color:var(--muted);margin-bottom:8px;}
@@ -1209,55 +1212,91 @@ body{display:flex;flex-direction:column;padding:8px;gap:8px;max-width:480px;marg
 .badge-green{background:#14532d;color:var(--green);border:1px solid #166534;}
 .badge-red{background:#450a0a;color:var(--red);border:1px solid #7f1d1d;}
 .badge-muted{background:#1e2233;color:var(--muted);border:1px solid var(--border);}
-/* Status bar */
-.status-bar{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-.status-bar h1{font-size:.95rem;font-weight:700;}
-/* Toggle button */
-.follow-btn{width:100%;padding:16px;border-radius:10px;border:none;font-size:1.1rem;font-weight:700;
+/* Speed row */
+.top-row{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.top-row label{font-size:.75rem;color:var(--muted);white-space:nowrap;}
+input[type=range]{flex:1;accent-color:var(--blue);height:22px;}
+.spd-val{font-size:.82rem;font-weight:700;min-width:46px;text-align:right;}
+/* D-pad */
+.dpad{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;
+      gap:6px;height:220px;}
+.dp{background:var(--card);border:2px solid var(--border);border-radius:12px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:1.8rem;cursor:pointer;user-select:none;-webkit-user-select:none;}
+.dp.pressed{background:#1e2a50;border-color:var(--blue);}
+.dp-diag{font-size:1.3rem;color:#3a4560;}
+.dp-diag.pressed{color:var(--text);background:#1e2a50;border-color:var(--blue);}
+.dp-stop{background:#2a1a1a;border-color:#7f1d1d;color:var(--red);}
+.dp-stop.pressed{background:#4a1a1a;}
+.vel{text-align:center;font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums;}
+/* Follow button */
+.follow-btn{width:100%;padding:14px;border-radius:10px;border:none;font-size:1rem;font-weight:700;
             cursor:pointer;transition:all .15s;letter-spacing:.03em;}
 .follow-btn.enable{background:#14532d;color:var(--green);border:2px solid #166534;}
 .follow-btn.disable{background:#450a0a;color:var(--red);border:2px solid #7f1d1d;}
-/* Big metrics */
+/* Person metrics */
 .metrics-strip{display:flex;gap:0;}
-.metric-cell{flex:1;text-align:center;padding:10px 4px;border-right:1px solid var(--border);}
+.metric-cell{flex:1;text-align:center;padding:8px 4px;border-right:1px solid var(--border);}
 .metric-cell:last-child{border-right:none;}
-.metric-big{font-size:1.5rem;font-weight:700;line-height:1.1;}
-.metric-label{font-size:.68rem;color:var(--muted);text-transform:uppercase;margin-top:3px;}
+.metric-big{font-size:1.3rem;font-weight:700;line-height:1.1;}
+.metric-label{font-size:.65rem;color:var(--muted);text-transform:uppercase;margin-top:2px;}
 /* Lateral bar */
-.lat-bar-wrap{position:relative;height:40px;margin:4px 0 2px;}
+.lat-bar-wrap{position:relative;height:36px;margin:4px 0 2px;}
 .lat-bar-bg{position:absolute;inset:8px 0;background:#1e2233;border-radius:4px;}
 .lat-bar-fill{position:absolute;top:8px;bottom:8px;background:#3b82f630;transition:all .2s;}
-.lat-dot{position:absolute;top:50%;width:22px;height:22px;border-radius:50%;
+.lat-dot{position:absolute;top:50%;width:20px;height:20px;border-radius:50%;
          transform:translate(-50%,-50%);transition:left .2s;}
-.lat-labels{display:flex;justify-content:space-between;font-size:.65rem;color:var(--muted);margin-top:2px;}
+.lat-labels{display:flex;justify-content:space-between;font-size:.62rem;color:var(--muted);margin-top:1px;}
 /* LIDAR */
 .lidar-wrap{display:flex;justify-content:center;}
 canvas{border-radius:50%;background:#0a0c14;display:block;}
 /* E-Stop */
-.estop-btn{width:100%;padding:18px;background:#450a0a;color:var(--red);border:2px solid #7f1d1d;
-           border-radius:10px;font-size:1.1rem;font-weight:700;cursor:pointer;letter-spacing:.05em;}
-.reset-btn{width:100%;padding:12px;background:#14532d;color:var(--green);border:2px solid #166534;
-           border-radius:10px;font-size:.9rem;font-weight:700;cursor:pointer;}
+.estop-bar{display:flex;gap:8px;}
+.estop-bar button{flex:1;padding:14px;border-radius:10px;font-size:.95rem;font-weight:700;
+                  cursor:pointer;letter-spacing:.03em;border:2px solid;}
+.es-stop{background:#450a0a;color:var(--red);border-color:#7f1d1d;}
+.es-reset{background:#14532d;color:var(--green);border-color:#166534;}
 </style>
 </head>
 <body>
 
-<!-- Status bar -->
-<div class="card status-bar">
-  <h1>&#128100; Follow-Me</h1>
+<header>
+  <h1>&#127918; Robot Control</h1>
   <div style="display:flex;align-items:center;gap:8px;">
     <span id="m-mode-badge" class="badge badge-muted">IDLE</span>
     <span id="m-conn-dot" class="dot" style="background:var(--muted)"></span>
+    <a class="back" href="/">Dashboard</a>
   </div>
+</header>
+
+<!-- ── D-Pad Remote ── -->
+<div class="card">
+  <div class="card-title">Remote Control</div>
+  <div class="top-row">
+    <label>Speed</label>
+    <input type="range" id="spd" min="0.05" max="0.5" step="0.05" value="0.25"
+      oninput="spd=+this.value;document.getElementById('sv').textContent=spd.toFixed(2)+' m/s'">
+    <span class="spd-val" id="sv">0.25 m/s</span>
+  </div>
+  <div class="dpad" style="margin-top:8px;">
+    <div class="dp dp-diag" id="b-fl">&#8598;</div>
+    <div class="dp" id="b-fwd">&#9650;</div>
+    <div class="dp dp-diag" id="b-fr">&#8599;</div>
+    <div class="dp" id="b-left">&#9664;</div>
+    <div class="dp dp-stop" id="b-stop">&#9632;</div>
+    <div class="dp" id="b-right">&#9654;</div>
+    <div class="dp dp-diag" id="b-bl">&#8601;</div>
+    <div class="dp" id="b-back">&#9660;</div>
+    <div class="dp dp-diag" id="b-br">&#8600;</div>
+  </div>
+  <div class="vel" id="vel" style="margin-top:4px;">v: 0.00 m/s &nbsp; &#969;: 0.00 rad/s</div>
 </div>
 
-<!-- Toggle -->
-<button id="m-fm-btn" class="follow-btn enable" onclick="toggleFollow()">&#9654; Enable Follow-Me</button>
-
-<!-- Person stats -->
+<!-- ── Follow-Me ── -->
 <div class="card">
-  <div class="card-title">Person</div>
-  <div class="metrics-strip">
+  <div class="card-title">Follow-Me</div>
+  <button id="m-fm-btn" class="follow-btn enable" onclick="toggleFollow()">&#9654; Enable Follow-Me</button>
+  <div class="metrics-strip" style="margin-top:8px;">
     <div class="metric-cell">
       <div id="m-dist" class="metric-big" style="color:var(--muted)">—</div>
       <div class="metric-label">Distance</div>
@@ -1271,18 +1310,17 @@ canvas{border-radius:50%;background:#0a0c14;display:block;}
       <div class="metric-label">Confidence</div>
     </div>
   </div>
-  <!-- Lateral bar -->
-  <div style="margin-top:6px;">
+  <div style="margin-top:4px;">
     <div class="lat-bar-wrap">
       <div class="lat-bar-bg"></div>
       <div id="m-lat-fill" class="lat-bar-fill" style="left:50%;width:0;"></div>
       <div id="m-lat-dot" class="lat-dot" style="left:50%;background:var(--muted);display:none;"></div>
     </div>
-    <div class="lat-labels"><span>◀ 1.5m</span><span>Centre</span><span>1.5m ▶</span></div>
+    <div class="lat-labels"><span>&#9664; 1.5m</span><span>Centre</span><span>1.5m &#9654;</span></div>
   </div>
 </div>
 
-<!-- LIDAR -->
+<!-- ── LIDAR ── -->
 <div class="card">
   <div class="card-title">LIDAR &nbsp;
     <span style="font-weight:400;font-size:.65rem;">
@@ -1291,7 +1329,7 @@ canvas{border-radius:50%;background:#0a0c14;display:block;}
       <span style="color:var(--green);">&#9679;</span>&gt;1m
     </span>
   </div>
-  <div class="lidar-wrap"><canvas id="m-lidar" width="300" height="300"></canvas></div>
+  <div class="lidar-wrap"><canvas id="m-lidar" width="280" height="280"></canvas></div>
   <div style="display:flex;justify-content:space-around;margin-top:8px;">
     <div style="text-align:center;"><div style="color:var(--muted);font-size:.68rem;">FRONT</div><div id="m-lf" class="val">—</div></div>
     <div style="text-align:center;"><div style="color:var(--muted);font-size:.68rem;">LEFT</div><div id="m-ll" class="val">—</div></div>
@@ -1300,24 +1338,20 @@ canvas{border-radius:50%;background:#0a0c14;display:block;}
   </div>
 </div>
 
-<!-- OAK-D + Battery strip -->
+<!-- ── System ── -->
 <div class="card">
-  <div class="card-title">OAK-D &amp; Battery</div>
-  <div class="row"><span class="label">Detection</span><span id="m-det"></span></div>
+  <div class="card-title">System</div>
+  <div class="row"><span class="label">Detection</span><span id="m-det"><span class="badge badge-muted">None</span></span></div>
   <div class="row"><span class="label">Voltage</span><span id="m-bv" class="val">—</span></div>
   <div class="row"><span class="label">Charge</span><span id="m-bsoc" class="val">—</span></div>
-  <div class="row"><span class="label">Bridge</span><span id="m-bridge"></span></div>
-  <div class="row"><span class="label">E-Stop</span><span id="m-estop"></span></div>
+  <div class="row"><span class="label">Bridge</span><span id="m-bridge">—</span></div>
+  <div class="row"><span class="label">E-Stop</span><span id="m-estop">—</span></div>
 </div>
 
-<!-- E-Stop -->
-<button class="estop-btn" onclick="sendEstop()">&#9632; EMERGENCY STOP</button>
-<button class="reset-btn" onclick="resetEstop()">&#10003; Reset E-Stop</button>
-
-<div style="text-align:center;padding:4px 0;">
-  <a href="/follow" style="color:var(--muted);font-size:.75rem;text-decoration:none;">Desktop view &#8599;</a>
-  &nbsp;&nbsp;
-  <a href="/" style="color:var(--muted);font-size:.75rem;text-decoration:none;">Dashboard &#8599;</a>
+<!-- ── E-Stop ── -->
+<div class="estop-bar">
+  <button class="es-stop" onclick="sendEstop()">&#9632; E-STOP</button>
+  <button class="es-reset" onclick="resetEstop()">&#10003; Reset</button>
 </div>
 
 <script>
@@ -1332,252 +1366,12 @@ const distColor = d => {
   return 'var(--muted)';
 };
 
-let followEnabled = false;
-
-function toggleFollow() {
-  fetch('/follow_me', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({enabled: !followEnabled})}).catch(()=>{});
-}
-function sendEstop() {
-  fetch('/estop', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({reset: false})}).catch(()=>{});
-}
-function resetEstop() {
-  fetch('/estop', {method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({reset: true})}).catch(()=>{});
-}
-
-function drawLidar(pts, ts) {
-  const canvas = $('m-lidar');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W=canvas.width, H=canvas.height, cx=W/2, cy=H/2;
-  const maxDist=3.0, scale=(Math.min(W,H)/2-18)/maxDist;
-  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0a0c14'; ctx.fillRect(0,0,W,H);
-  for(let r=1;r<=maxDist;r++){
-    ctx.strokeStyle='#1e2538';ctx.lineWidth=1;
-    ctx.beginPath();ctx.arc(cx,cy,r*scale,0,2*Math.PI);ctx.stroke();
-    ctx.fillStyle='#3a4560';ctx.font='8px monospace';ctx.textAlign='left';
-    ctx.fillText(r+'m',cx+r*scale+2,cy+4);
-  }
-  ctx.strokeStyle='#1e2538';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(cx,cy-maxDist*scale-6);ctx.lineTo(cx,cy+maxDist*scale+6);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(cx-maxDist*scale-6,cy);ctx.lineTo(cx+maxDist*scale+6,cy);ctx.stroke();
-  ctx.strokeStyle='#ef444470';ctx.lineWidth=1;ctx.setLineDash([4,4]);
-  ctx.beginPath();ctx.arc(cx,cy,0.5*scale,0,2*Math.PI);ctx.stroke();ctx.setLineDash([]);
-  if(!ts||age(ts)>5){
-    ctx.fillStyle='#3a4560';ctx.font='12px monospace';ctx.textAlign='center';
-    ctx.fillText('No LIDAR',cx,cy+6);
-  } else {
-    for(const [angle,dist] of pts){
-      const d=Math.min(dist,maxDist);
-      const px=cx+Math.sin(angle)*d*scale, py=cy+Math.cos(angle)*d*scale;
-      ctx.fillStyle=dist<0.5?'#ef4444':dist<1.0?'#eab308':'#22c55e';
-      ctx.beginPath();ctx.arc(px,py,2.5,0,2*Math.PI);ctx.fill();
-    }
-  }
-  ctx.fillStyle='#3b82f6';
-  ctx.beginPath();ctx.moveTo(cx,cy-9);ctx.lineTo(cx-6,cy+6);ctx.lineTo(cx+6,cy+6);ctx.closePath();ctx.fill();
-  ctx.fillStyle='#3b82f6';ctx.font='8px monospace';ctx.textAlign='center';
-  ctx.fillText('FWD',cx,cy-maxDist*scale-5);ctx.textAlign='left';
-}
-
-async function poll() {
-  try {
-    const r = await fetch('/metrics');
-    const d = await r.json();
-    const fm = d.follow_me || {};
-    const li = d.lidar || {};
-    const ba = d.battery || {};
-    const st = d.status || {};
-
-    followEnabled = !!fm.enabled;
-    const btn = $('m-fm-btn');
-    if (followEnabled) {
-      btn.textContent = '⏹ Disable Follow-Me';
-      btn.className = 'follow-btn disable';
-      $('m-mode-badge').className = 'badge badge-green';
-      $('m-mode-badge').textContent = 'FOLLOWING';
-    } else {
-      btn.textContent = '▶ Enable Follow-Me';
-      btn.className = 'follow-btn enable';
-      $('m-mode-badge').className = 'badge badge-muted';
-      $('m-mode-badge').textContent = 'IDLE';
-    }
-
-    $('m-conn-dot').style.background = d.bridge_connected ? 'var(--green)' : 'var(--red)';
-
-    const pd = !!fm.person_detected;
-    const distV = fm.distance_m, latV = fm.lateral_m;
-
-    $('m-dist').textContent = distV != null ? distV.toFixed(2)+' m' : '—';
-    $('m-dist').style.color = distColor(distV);
-    $('m-lat-num').textContent = latV != null ? (latV>=0?'+':'')+latV.toFixed(2)+' m' : '—';
-    $('m-lat-num').style.color = latV!=null?(Math.abs(latV)<0.1?'var(--green)':Math.abs(latV)<0.5?'var(--yellow)':'var(--red)'):'var(--muted)';
-    $('m-conf').textContent = fm.confidence!=null ? (fm.confidence*100).toFixed(0)+'%' : '—';
-    $('m-conf').style.color = fm.confidence>0.7?'var(--green)':fm.confidence>0.4?'var(--yellow)':'var(--muted)';
-
-    // Lateral bar
-    const dot = $('m-lat-dot'), fill = $('m-lat-fill');
-    if (latV != null) {
-      const norm = Math.max(-1, Math.min(1, latV/1.5));
-      const pct = 50 + norm*50;
-      const dc = Math.abs(latV)<0.1?'var(--green)':Math.abs(latV)<0.5?'var(--yellow)':'var(--red)';
-      dot.style.display='block'; dot.style.left=pct+'%'; dot.style.background=dc;
-      fill.style.left = Math.min(50,pct)+'%';
-      fill.style.width = Math.abs(pct-50)+'%';
-      fill.style.background = dc+'40';
-    } else {
-      dot.style.display='none'; fill.style.width='0';
-    }
-
-    $('m-det').innerHTML = pd
-      ? '<span class="badge badge-green">Person</span>'
-      : '<span class="badge badge-muted">None</span>';
-
-    $('m-bv').textContent  = ba.voltage  != null ? ba.voltage.toFixed(2)+' V' : '—';
-    $('m-bv').style.color  = ba.voltage  != null ? (ba.voltage>12.5?'var(--green)':ba.voltage>11.8?'var(--yellow)':'var(--red)') : 'var(--muted)';
-    $('m-bsoc').textContent = ba.soc_pct != null ? ba.soc_pct+'%' : '—';
-
-    $('m-bridge').innerHTML = d.bridge_connected
-      ? '<span style="color:var(--green)">Connected</span>'
-      : '<span style="color:var(--red)">Disconnected</span>';
-    const estop = st.emergency_stop;
-    $('m-estop').innerHTML = estop===false ? '<span style="color:var(--green)">OK</span>'
-                           : estop===true  ? '<span style="color:var(--red)">ACTIVE</span>'
-                           : '<span style="color:var(--muted)">—</span>';
-
-    drawLidar(li.pts||[], li.ts);
-
-    const df = v => v==null?'—':v.toFixed(1)+' m';
-    const dc = v => v==null?'var(--muted)':v<0.7?'var(--red)':v<1.0?'var(--yellow)':'var(--green)';
-    $('m-lf').textContent = df(li.front_m); $('m-lf').style.color = dc(li.front_m);
-    $('m-ll').textContent = df(li.left_m);  $('m-ll').style.color = dc(li.left_m);
-    $('m-lr').textContent = df(li.right_m); $('m-lr').style.color = dc(li.right_m);
-    $('m-lrear').textContent = df(li.rear_m); $('m-lrear').style.color = dc(li.rear_m);
-
-  } catch(e) {}
-}
-
-poll();
-setInterval(poll, 400);
-</script>
-</body>
-</html>"""
-
-
-# ── Mobile remote page ────────────────────────────────────────────────────────
-REMOTE_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<title>Robot Remote</title>
-<style>
-  :root{--bg:#0f1117;--card:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;--muted:#8892a4;
-        --green:#22c55e;--red:#ef4444;--yellow:#eab308;--blue:#3b82f6;}
-  *{box-sizing:border-box;margin:0;padding:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
-  html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;}
-  body{display:flex;flex-direction:column;padding:10px;gap:7px;}
-  header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-  header h1{font-size:.9rem;font-weight:600;}
-  a.back{font-size:.78rem;color:var(--muted);text-decoration:none;}
-  .top-row{display:flex;align-items:center;gap:8px;flex-shrink:0;}
-  .top-row label{font-size:.75rem;color:var(--muted);white-space:nowrap;}
-  input[type=range]{flex:1;accent-color:var(--blue);height:22px;}
-  .spd-val{font-size:.82rem;font-weight:700;min-width:46px;text-align:right;}
-  .axswap{font-size:.72rem;background:var(--card);border:1px solid var(--border);
-          border-radius:6px;padding:3px 8px;color:var(--muted);cursor:pointer;white-space:nowrap;flex-shrink:0;}
-  .axswap.on{border-color:var(--yellow);color:var(--yellow);}
-  /* LIDAR */
-  .lidar-wrap{display:flex;justify-content:center;flex-shrink:0;}
-  canvas{border-radius:50%;background:#0a0c14;display:block;}
-  /* D-pad */
-  .dpad{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;
-        gap:7px;flex:1;min-height:0;}
-  .dp{background:var(--card);border:2px solid var(--border);border-radius:12px;
-      display:flex;align-items:center;justify-content:center;
-      font-size:1.8rem;cursor:pointer;user-select:none;-webkit-user-select:none;}
-  .dp.pressed{background:#1e2a50;border-color:var(--blue);}
-  .dp-diag{font-size:1.3rem;color:#3a4560;}
-  .dp-diag.pressed{color:var(--text);background:#1e2a50;border-color:var(--blue);}
-  .dp-stop{background:#2a1a1a;border-color:#7f1d1d;color:var(--red);}
-  .dp-stop.pressed{background:#4a1a1a;}
-  /* E-Stop */
-  .estop-btn{border-radius:12px;padding:11px 16px;display:flex;flex-direction:column;
-             align-items:center;justify-content:center;gap:2px;
-             cursor:pointer;user-select:none;flex-shrink:0;border:2px solid;}
-  .estop-btn:active{filter:brightness(1.3);}
-  .es-ok{background:#0d2b1a;border-color:var(--green);color:var(--green);}
-  .es-act{background:#2a1a1a;border-color:var(--red);color:var(--red);}
-  .es-lbl{font-size:.92rem;font-weight:800;letter-spacing:1px;}
-  .es-sub{font-size:.68rem;opacity:.75;}
-  .vel{text-align:center;font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums;flex-shrink:0;}
-</style>
-</head>
-<body>
-<header>
-  <h1>&#127918; Robot Remote</h1>
-  <a class="back" href="/">&#8592; Dashboard</a>
-</header>
-
-<div class="top-row">
-  <label>Speed</label>
-  <input type="range" id="spd" min="0.05" max="0.5" step="0.05" value="0.25"
-    oninput="spd=+this.value;document.getElementById('sv').textContent=spd.toFixed(2)+' m/s'">
-  <span class="spd-val" id="sv">0.25 m/s</span>
-  <button class="axswap" id="axbtn" onclick="toggleAxes()">Axes: Normal</button>
-</div>
-
-<div class="lidar-wrap">
-  <canvas id="lc" width="200" height="200"></canvas>
-</div>
-
-<div class="dpad">
-  <div class="dp dp-diag" id="b-fl">&#8598;</div>
-  <div class="dp" id="b-fwd">&#9650;</div>
-  <div class="dp dp-diag" id="b-fr">&#8599;</div>
-  <div class="dp" id="b-left">&#9664;</div>
-  <div class="dp dp-stop" id="b-stop">&#9632;</div>
-  <div class="dp" id="b-right">&#9654;</div>
-  <div class="dp dp-diag" id="b-bl">&#8601;</div>
-  <div class="dp" id="b-back">&#9660;</div>
-  <div class="dp dp-diag" id="b-br">&#8600;</div>
-</div>
-
-<div class="estop-btn es-ok" id="estop-btn" onclick="toggleEstop()">
-  <span class="es-lbl" id="es-lbl">&#10003; Movement Allowed</span>
-  <span class="es-sub" id="es-sub">Tap to activate E-Stop</span>
-</div>
-
-<div class="vel" id="vel">v: 0.00 m/s &nbsp; &#969;: 0.00 rad/s</div>
-
-<script>
-const $ = id => document.getElementById(id);
-let spd = 0.25, iv = null, adir = null, arcTog = false, axSwap = false;
-
-// [lin_factor, ang_factor] — diagonal corners alternate fwd+turn for arc approx
-const MOVES_NORMAL = {
+// ── D-Pad logic ──────────────────────────────────────────────────────────────
+let spd = 0.25, iv = null, adir = null, arcTog = false;
+const MOVES = {
   fwd:[1,0], back:[-1,0], left:[0,1], right:[0,-1],
   fl:[1,1],  fr:[1,-1],   bl:[-1,-1], br:[-1,1]
 };
-// Swapped axes: ▲ turns, ◄► moves fwd/back (for chassis mounted 90deg off)
-const MOVES_SWAP = {
-  fwd:[0,1], back:[0,-1], left:[-1,0], right:[1,0],
-  fl:[1,1],  fr:[1,-1],   bl:[-1,-1], br:[-1,1]
-};
-let MOVES = MOVES_NORMAL;
-
-function toggleAxes() {
-  axSwap = !axSwap;
-  MOVES = axSwap ? MOVES_SWAP : MOVES_NORMAL;
-  const btn = $('axbtn');
-  btn.textContent = axSwap ? 'Axes: Swapped' : 'Axes: Normal';
-  btn.className = axSwap ? 'axswap on' : 'axswap';
-  stop();
-}
 
 function send(lin, ang) {
   fetch('/cmd', {method:'POST', headers:{'Content-Type':'application/json'},
@@ -1630,65 +1424,144 @@ document.addEventListener('keyup', e => {
   if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) stop();
 });
 
-// ── E-Stop ────────────────────────────────────────────────────────────────────
-let estopped = false;
-function toggleEstop() {
+// ── Follow-Me ────────────────────────────────────────────────────────────────
+let followEnabled = false;
+function toggleFollow() {
+  fetch('/follow_me', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({enabled: !followEnabled})}).catch(()=>{});
+}
+
+// ── E-Stop ───────────────────────────────────────────────────────────────────
+function sendEstop() {
   stop();
   fetch('/estop', {method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({reset: estopped})}).catch(()=>{});
+    body: JSON.stringify({reset: false})}).catch(()=>{});
 }
-function setEstopUI(active) {
-  estopped = active;
-  const btn = $('estop-btn'), lbl = $('es-lbl'), sub = $('es-sub');
-  if (active) {
-    btn.className = 'estop-btn es-act';
-    lbl.textContent = '\u26a0 Movement Disabled';
-    sub.textContent = 'Tap to Reset E-Stop';
-  } else {
-    btn.className = 'estop-btn es-ok';
-    lbl.textContent = '\u2713 Movement Allowed';
-    sub.textContent = 'Tap to Activate E-Stop';
-  }
+function resetEstop() {
+  fetch('/estop', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({reset: true})}).catch(()=>{});
 }
 
-// ── LIDAR radar ───────────────────────────────────────────────────────────────
-const cvs = $('lc'), ctx = cvs.getContext('2d');
-const CW = cvs.width, CH = cvs.height, cx = CW/2, cy = CH/2, maxR = cx - 6;
-const MAX_D = 3.0;
+// ── LIDAR ────────────────────────────────────────────────────────────────────
 function drawLidar(pts, ts) {
-  ctx.clearRect(0, 0, CW, CH);
-  ctx.strokeStyle = '#1e2233'; ctx.lineWidth = 1;
-  [1,2,3].forEach(i => { ctx.beginPath(); ctx.arc(cx, cy, maxR*i/3, 0, 6.283); ctx.stroke(); });
-  ctx.beginPath(); ctx.moveTo(cx,4); ctx.lineTo(cx,CH-4); ctx.moveTo(4,cy); ctx.lineTo(CW-4,cy); ctx.stroke();
-  const age = ts > 0 ? (Date.now()/1000 - ts) : 99;
-  ctx.globalAlpha = age > 2 ? 0.3 : 1.0;
-  if (pts && pts.length) {
-    pts.forEach(([a, d]) => {
-      const dist = Math.min(d, MAX_D), s = (maxR / MAX_D) * dist;
-      const px = cx + Math.sin(a) * s, py = cy + Math.cos(a) * s;
-      const t = dist / MAX_D;
-      ctx.fillStyle = 'rgb('+Math.round(239*(1-t)+34*t)+','+Math.round(68*(1-t)+197*t)+','+Math.round(68*(1-t)+94*t)+')';
-      ctx.fillRect(px-1.5, py-1.5, 3, 3);
-    });
+  const canvas = $('m-lidar');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height, cx=W/2, cy=H/2;
+  const maxDist=3.0, scale=(Math.min(W,H)/2-18)/maxDist;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0a0c14'; ctx.fillRect(0,0,W,H);
+  for(let r=1;r<=maxDist;r++){
+    ctx.strokeStyle='#1e2538';ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(cx,cy,r*scale,0,2*Math.PI);ctx.stroke();
+    ctx.fillStyle='#3a4560';ctx.font='8px monospace';ctx.textAlign='left';
+    ctx.fillText(r+'m',cx+r*scale+2,cy+4);
   }
-  ctx.globalAlpha = 1.0;
-  ctx.fillStyle = '#94a3b8';
-  ctx.beginPath(); ctx.moveTo(cx, cy-9); ctx.lineTo(cx-6, cy+6); ctx.lineTo(cx+6, cy+6); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#1e2538';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(cx,cy-maxDist*scale-6);ctx.lineTo(cx,cy+maxDist*scale+6);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(cx-maxDist*scale-6,cy);ctx.lineTo(cx+maxDist*scale+6,cy);ctx.stroke();
+  ctx.strokeStyle='#ef444470';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+  ctx.beginPath();ctx.arc(cx,cy,0.5*scale,0,2*Math.PI);ctx.stroke();ctx.setLineDash([]);
+  if(!ts||age(ts)>5){
+    ctx.fillStyle='#3a4560';ctx.font='12px monospace';ctx.textAlign='center';
+    ctx.fillText('No LIDAR',cx,cy+6);
+  } else {
+    for(const [angle,dist] of pts){
+      const d=Math.min(dist,maxDist);
+      const px=cx+Math.sin(angle)*d*scale, py=cy+Math.cos(angle)*d*scale;
+      ctx.fillStyle=dist<0.5?'#ef4444':dist<1.0?'#eab308':'#22c55e';
+      ctx.beginPath();ctx.arc(px,py,2.5,0,2*Math.PI);ctx.fill();
+    }
+  }
+  ctx.fillStyle='#3b82f6';
+  ctx.beginPath();ctx.moveTo(cx,cy-9);ctx.lineTo(cx-6,cy+6);ctx.lineTo(cx+6,cy+6);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#3b82f6';ctx.font='8px monospace';ctx.textAlign='center';
+  ctx.fillText('FWD',cx,cy-maxDist*scale-5);ctx.textAlign='left';
 }
 
-// ── Poll metrics ──────────────────────────────────────────────────────────────
-function poll() {
-  fetch('/metrics').then(r => r.json()).then(d => {
+// ── Poll ─────────────────────────────────────────────────────────────────────
+async function poll() {
+  try {
+    const r = await fetch('/metrics');
+    const d = await r.json();
+    const fm = d.follow_me || {};
     const li = d.lidar || {};
-    drawLidar(li.pts || [], li.ts || 0);
-    const es = (d.status || {}).emergency_stop;
-    if (es != null) setEstopUI(es);
-  }).catch(() => {});
+    const ba = d.battery || {};
+    const st = d.status || {};
+
+    // Follow-me state
+    followEnabled = !!fm.enabled;
+    const btn = $('m-fm-btn');
+    if (followEnabled) {
+      btn.innerHTML = '&#9209; Disable Follow-Me';
+      btn.className = 'follow-btn disable';
+      $('m-mode-badge').className = 'badge badge-green';
+      $('m-mode-badge').textContent = 'FOLLOWING';
+    } else {
+      btn.innerHTML = '&#9654; Enable Follow-Me';
+      btn.className = 'follow-btn enable';
+      $('m-mode-badge').className = 'badge badge-muted';
+      $('m-mode-badge').textContent = 'IDLE';
+    }
+
+    $('m-conn-dot').style.background = d.bridge_connected ? 'var(--green)' : 'var(--red)';
+
+    // Person metrics
+    const distV = fm.distance_m, latV = fm.lateral_m;
+    $('m-dist').textContent = distV != null ? distV.toFixed(2)+' m' : '—';
+    $('m-dist').style.color = distColor(distV);
+    $('m-lat-num').textContent = latV != null ? (latV>=0?'+':'')+latV.toFixed(2)+' m' : '—';
+    $('m-lat-num').style.color = latV!=null?(Math.abs(latV)<0.1?'var(--green)':Math.abs(latV)<0.5?'var(--yellow)':'var(--red)'):'var(--muted)';
+    $('m-conf').textContent = fm.confidence!=null ? (fm.confidence*100).toFixed(0)+'%' : '—';
+    $('m-conf').style.color = fm.confidence>0.7?'var(--green)':fm.confidence>0.4?'var(--yellow)':'var(--muted)';
+
+    // Lateral bar
+    const dot = $('m-lat-dot'), fill = $('m-lat-fill');
+    if (latV != null) {
+      const norm = Math.max(-1, Math.min(1, latV/1.5));
+      const pct = 50 + norm*50;
+      const dc = Math.abs(latV)<0.1?'var(--green)':Math.abs(latV)<0.5?'var(--yellow)':'var(--red)';
+      dot.style.display='block'; dot.style.left=pct+'%'; dot.style.background=dc;
+      fill.style.left = Math.min(50,pct)+'%';
+      fill.style.width = Math.abs(pct-50)+'%';
+      fill.style.background = dc+'40';
+    } else {
+      dot.style.display='none'; fill.style.width='0';
+    }
+
+    $('m-det').innerHTML = fm.person_detected
+      ? '<span class="badge badge-green">Person</span>'
+      : '<span class="badge badge-muted">None</span>';
+
+    // System
+    $('m-bv').textContent  = ba.voltage  != null ? ba.voltage.toFixed(2)+' V' : '—';
+    $('m-bv').style.color  = ba.voltage  != null ? (ba.voltage>12.5?'var(--green)':ba.voltage>11.8?'var(--yellow)':'var(--red)') : 'var(--muted)';
+    $('m-bsoc').textContent = ba.soc_pct != null ? ba.soc_pct+'%' : '—';
+    $('m-bridge').innerHTML = d.bridge_connected
+      ? '<span style="color:var(--green)">Connected</span>'
+      : '<span style="color:var(--red)">Disconnected</span>';
+    const estop = st.emergency_stop;
+    $('m-estop').innerHTML = estop===false ? '<span style="color:var(--green)">OK</span>'
+                           : estop===true  ? '<span style="color:var(--red)">ACTIVE</span>'
+                           : '<span style="color:var(--muted)">—</span>';
+
+    // LIDAR
+    drawLidar(li.pts||[], li.ts);
+    const df = v => v==null?'—':v.toFixed(1)+' m';
+    const dc = v => v==null?'var(--muted)':v<0.7?'var(--red)':v<1.0?'var(--yellow)':'var(--green)';
+    $('m-lf').textContent = df(li.front_m); $('m-lf').style.color = dc(li.front_m);
+    $('m-ll').textContent = df(li.left_m);  $('m-ll').style.color = dc(li.left_m);
+    $('m-lr').textContent = df(li.right_m); $('m-lr').style.color = dc(li.right_m);
+    $('m-lrear').textContent = df(li.rear_m); $('m-lrear').style.color = dc(li.rear_m);
+
+  } catch(e) {}
 }
-drawLidar([], 0); poll(); setInterval(poll, 400);
+
+poll(); setInterval(poll, 400);
 </script>
 </body>
 </html>"""
+
+MFOLLOW_HTML = REMOTE_HTML
 
 
 FLASHPICO_HTML = """<!DOCTYPE html>
