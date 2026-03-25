@@ -532,8 +532,8 @@ class SerialMotorBridge(Node):
         # left_dir=+1 → left encoder increases (physically forward)
         # right_dir=+1 → right encoder increases (physically forward)
         # Pin direction mapping:
-        #   forward  = left_dir=+1, right_dir=+1
-        #   backward = left_dir=-1, right_dir=-1
+        #   forward  = left_dir=-1, right_dir=-1
+        #   backward = left_dir=+1, right_dir=+1
         #   CCW turn = left_dir=-1, right_dir=+1  (left back, right fwd)
         #   CW turn  = left_dir=+1, right_dir=-1  (left fwd, right back)
         if abs(linear_x) > 0.02 and not self.path_clear:
@@ -542,7 +542,7 @@ class SerialMotorBridge(Node):
             return
 
         if abs(linear_x) > 0.02:
-            left_dir, right_dir = (1, 1) if linear_x > 0 else (-1, -1)
+            left_dir, right_dir = (-1, -1) if linear_x > 0 else (1, 1)
             ratio = min(1.0, abs(linear_x) / MAX_LINEAR_MS)
             speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
             self.send_command_async({
