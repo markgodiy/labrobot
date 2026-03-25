@@ -171,3 +171,51 @@ The robot ran forward for ~5 seconds (watchdog timeout) and bumped into an objec
 |------|--------|
 | `upython/main.py` | Anti-stiction pulse + ramp_step 3000→10000 |
 | `scripts/serial_motor_bridge.py` | Negate right delta, fix angular formula |
+
+---
+
+## Follow-up Session 2 (same date) — Wiring Inspection & Power Switch
+
+### Motor Power Switch Found Off
+
+**Incident:** After user physically inspected and tightened wiring, both motors showed
+0 encoder counts and 0 current draw change during commands. Root cause: motor power
+switch was in the OFF position (turned off during inspection).
+
+**Fix:** User turned motor power switch back ON.
+
+**Lesson:** Always verify motor power switch state before diagnosing motor failures.
+Zero current draw = power supply issue, not encoder/firmware issue.
+
+### Direction Test Results (all 4 directions, post-fix)
+
+Robot facing ~+x (LIDAR clearances: fwd=1.30m, back=0.88m, left=1.33m, right=0.96m)
+
+| Direction | Result | odom |
+|-----------|--------|------|
+| FWD  | FORWARD OK  | dx=+0.083m |
+| BACK | BACKWARD OK | dx=−0.040m (limited by Motor A stiction) |
+| LEFT | TURN LEFT OK | dh=+31.5° |
+| RIGHT | TURN RIGHT OK | dh=−13.5° (limited by Motor A stiction) |
+
+All 4 directions pass. BACK and RIGHT are functional but reduced due to known
+Motor A backward hardware limitation (brush wear / commutator dead-spot).
+
+### H-Bridge Wire Color Mapping (confirmed by physical inspection)
+
+L298N 6-pin control header wire colors (EN0=top to EN5=bottom):
+- EN0 Green  → ENA  (GP2 PWM)
+- EN1 Yellow → IN1  (GP3)
+- EN2 Orange → IN2  (GP4)
+- EN3 Gray   → IN3  (GP11)
+- EN4 Purple → IN4  (GP12)
+- EN5 Blue   → ENB  (GP10 PWM)
+
+Note: IN2 (Orange/GP4) is suspected loose/disconnected — Motor A backward
+drive remains at ~6% of expected (coasting only). Full GPIO scan in previous
+session confirmed no GPIO drives Motor A backward.
+
+### Nav2 Mitigation
+
+Forward-only navigation configured in Nav2 params — robot turns in place rather
+than reversing. FWD and LEFT turn are fully functional for autonomous navigation.

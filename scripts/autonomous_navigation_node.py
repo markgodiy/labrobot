@@ -209,20 +209,10 @@ class AutonomousNavigationNode(Node):
     def initialize_controller(self):
         """Initialize communication with MicroPython controller"""
         try:
-            # First, reset emergency stop in case it was set during startup
-            self.get_logger().info("Resetting emergency stop on startup...")
-            estop_reset_request = Trigger.Request()
-            reset_future = self.motor_reset_emergency_stop_client.call_async(estop_reset_request)
-            rclpy.spin_until_future_complete(self, reset_future, timeout_sec=2.0)
-            
-            if reset_future.result() is not None and reset_future.result().success:
-                self.get_logger().info("Emergency stop reset successfully")
-            else:
-                self.get_logger().warn("Failed to reset emergency stop")
-            
-            # Wait a moment for the reset to take effect
-            time.sleep(0.5)
-            
+            self.get_logger().warn(
+                "Motors held in estop — call /motor/reset_emergency_stop to enable"
+            )
+
             # Set autonomous mode via service call
             request = SetBool.Request()
             request.data = self.autonomous_enabled

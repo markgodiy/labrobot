@@ -92,7 +92,9 @@ def generate_launch_description():
             {'scan_mode': scan_mode},
             {'use_sim_time': use_sim_time}
         ],
-        output='log'
+        output='log',
+        respawn=True,
+        respawn_delay=5.0,
     )
 
     # OAK-D Lite Camera configuration - Following official depthai-ros documentation
@@ -105,7 +107,9 @@ def generate_launch_description():
         name='oak',  # Standard name following depthai-ros conventions
         parameters=[{
             # Basic camera configuration
-            'camera.i_pipeline_type': 'RGBD',  # Correct parameter name
+            'camera.i_pipeline_type': 'RGBD',
+            'camera.i_nn_type': 'spatial',          # enable spatial detection NN
+            'nn.i_nn_config_path': 'depthai_ros_driver/mobilenet',  # MobileNet-SSD person detection
             'camera.i_publish_tf_from_calibration': True,
             'camera.i_tf_base_frame': 'oak',
             'camera.i_tf_camera_name': 'oak',

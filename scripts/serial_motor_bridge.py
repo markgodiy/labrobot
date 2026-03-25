@@ -43,6 +43,8 @@ from std_msgs.msg import String
 from geometry_msgs.msg import Twist, TransformStamped
 from nav_msgs.msg import Odometry
 from tf2_ros import TransformBroadcaster
+from sensor_msgs.msg import LaserScan
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 class SerialMotorBridge(Node):
     def __init__(self):
@@ -59,6 +61,10 @@ class SerialMotorBridge(Node):
         self.declare_parameter('encoder_poll_hz', 20.0)    # encoder query rate
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_footprint')
+        self.declare_parameter('lidar_min_range', 0.25)
+        self.declare_parameter('min_obstacle_distance', 0.7)
+        self.declare_parameter('scan_angle_deg', 90.0)
+        self.declare_parameter('scan_stale_sec', 1.0)
 
         # Get parameters
         self.serial_port = self.get_parameter('serial_port').value
@@ -72,7 +78,16 @@ class SerialMotorBridge(Node):
         self.odom_frame = self.get_parameter('odom_frame').value
         self.base_frame = self.get_parameter('base_frame').value
         self.m_per_tick = (2.0 * math.pi * self.wheel_radius_m) / self.ticks_per_rev
+        self.lidar_min_range = self.get_parameter('lidar_min_range').value
+        self.min_obstacle_distance = self.get_parameter('min_obstacle_distance').value
+        self.scan_angle_deg = self.get_parameter('scan_angle_deg').value
+        self.scan_stale_sec = self.get_parameter('scan_stale_sec').value
         
+        # LIDAR safety gate state
+        self.path_clear = False   # blocked until first scan received
+        self.last_scan_time = None
+        self._last_lidar_warn_time = 0.0
+
         # Serial connection
         self.ser = None
         self.serial_lock = Lock()
@@ -109,6 +124,12 @@ class SerialMotorBridge(Node):
             10
         )
         
+        # LIDAR safety — gate all forward motion on /scan
+        self.scan_subscriber = self.create_subscription(
+            LaserScan, '/scan', self._scan_callback,
+            QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=1)
+        )
+
         # cmd_vel watchdog — stop motors if no cmd_vel arrives for 5s while moving
         self.last_cmd_vel_time = None  # None = not moving via cmd_vel
         self.cmd_vel_watchdog_timeout = 5.0
@@ -158,6 +179,9 @@ class SerialMotorBridge(Node):
             response = self.send_command({"cmd": "ping"}, timeout=3.0)
             if response and response.get("status") == "ok":
                 self.get_logger().info("MicroPython controller responded successfully")
+                # Always engage estop on bridge startup — Pi reboot must not resume motion
+                self.send_command({"cmd": "estop"}, timeout=2.0)
+                self.get_logger().warn("Startup estop sent — call /motor/reset_emergency_stop to enable motors")
             else:
                 self.get_logger().warn("No valid response from MicroPython controller")
                 
@@ -458,6 +482,24 @@ class SerialMotorBridge(Node):
             self.send_command_async({"cmd": "stop"})
             self.last_cmd_vel_time = None
 
+    def _scan_callback(self, msg):
+        """Update path_clear from the frontal LIDAR sector."""
+        self.last_scan_time = time.time()
+        n = len(msg.ranges)
+        if n == 0:
+            return
+        half_idx = int(math.radians(self.scan_angle_deg / 2.0) / msg.angle_increment)
+        # Front sector: last half_idx indices + first half_idx indices (0° is forward)
+        front_indices = list(range(max(0, n - half_idx), n)) + list(range(0, min(half_idx + 1, n)))
+        valid = [msg.ranges[i] for i in front_indices
+                 if self.lidar_min_range < msg.ranges[i] < msg.range_max]
+        obstacle = bool(valid) and min(valid) < self.min_obstacle_distance
+        if obstacle and self.path_clear:
+            self.get_logger().warn(
+                f"LIDAR: obstacle at {min(valid):.2f}m — forward motion blocked"
+            )
+        self.path_clear = not obstacle
+
     def handle_twist(self, msg):
         """Handle Twist message for direct movement control.
 
@@ -466,6 +508,18 @@ class SerialMotorBridge(Node):
         so we map the Nav2 full-scale output to 85–100% motor power rather than
         the raw percentage which would be 22% (below the movement threshold).
         """
+        # --- LIDAR safety gate ---
+        now = time.time()
+        scan_stale = (self.last_scan_time is None or
+                      now - self.last_scan_time > self.scan_stale_sec)
+        if scan_stale:
+            self.send_command_async({"cmd": "stop"})
+            self.last_cmd_vel_time = None
+            if now - self._last_lidar_warn_time > 5.0:
+                self.get_logger().warn("LIDAR: no scan received — blocking all motion")
+                self._last_lidar_warn_time = now
+            return
+
         linear_x = msg.linear.x
         angular_z = msg.angular.z
 
@@ -474,28 +528,35 @@ class SerialMotorBridge(Node):
         MOTOR_MIN      = 85     # minimum effective PWM %
         MOTOR_MAX      = 100
 
-        # NOTE: motors are physically wired with one motor inverted, so the Pico
-        # "rotate" command causes linear translation and "move" causes rotation.
-        # Mapping verified empirically: rotate-right=forward, move-backward=rotate-CW.
+        # Motor wiring (verified empirically): one motor is physically inverted.
+        # set_speed controls left/right PWM directly without ramping.
+        # Pin direction mapping:
+        #   forward  = left_dir=+1, right_dir=-1  (was: rotate-right)
+        #   backward = left_dir=-1, right_dir=+1  (was: rotate-left)
+        #   CCW turn = left_dir=+1, right_dir=+1  (was: move-forward)
+        #   CW turn  = left_dir=-1, right_dir=-1  (was: move-backward)
+        if abs(linear_x) > 0.02 and not self.path_clear:
+            self.send_command_async({"cmd": "stop"})
+            self.last_cmd_vel_time = None
+            return
+
         if abs(linear_x) > 0.02:
-            direction = "right" if linear_x > 0 else "left"
+            left_dir, right_dir = (1, -1) if linear_x > 0 else (-1, 1)
             ratio = min(1.0, abs(linear_x) / MAX_LINEAR_MS)
             speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
             self.send_command_async({
-                "cmd": "rotate",
-                "dir": direction,
-                "speed": speed
+                "cmd": "set_speed",
+                "left_dir": left_dir, "right_dir": right_dir, "speed": speed
             })
             self.last_cmd_vel_time = time.time()
         elif abs(angular_z) > 0.05:
-            # angular_z > 0 = CCW (left turn) = move-forward; < 0 = CW (right turn) = move-backward
-            direction = "forward" if angular_z > 0 else "backward"
+            # angular_z > 0 = CCW (left turn); < 0 = CW (right turn)
+            left_dir, right_dir = (1, 1) if angular_z > 0 else (-1, -1)
             ratio = min(1.0, abs(angular_z) / MAX_ANGULAR_RS)
             speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
             self.send_command_async({
-                "cmd": "move",
-                "dir": direction,
-                "speed": speed
+                "cmd": "set_speed",
+                "left_dir": left_dir, "right_dir": right_dir, "speed": speed
             })
             self.last_cmd_vel_time = time.time()
         else:

@@ -7,10 +7,9 @@ Serial protocol (USB, 115200 baud):
   Pico → Pi:  {"status": "ok"|"error", ...}\n
               {"type": "status"|"heartbeat"|"battery"|"log", ...}\n
 
-Motor A (Left):  ENA=GP2, IN1=GP3, IN2=GP4
-
-Motor B (Right): ENB=GP10, IN3=GP11, IN4=GP12  ← confirmed by pin_discover.py
-H-Bridge STBY:   GP5=left, GP13=right (must be HIGH; two separate H-bridge ICs)
+Motor A (Left):  ENA=GP3, IN1=GP4, IN2=GP5
+Motor B (Right): IN3=GP11, IN4=GP12, ENB=GP13
+H-Bridge STBY:   tied HIGH on PCB (no GPIO control needed)
 
 Encoder Left:    A=GP16, B=GP17  ← confirmed by pin_discover.py
 Encoder Right:   A=GP18, B=GP19  ← confirmed by pin_discover.py
@@ -42,16 +41,13 @@ MM_PER_PULSE = WHEEL_CIRCUMFERENCE_MM / PULSES_PER_REV
 # ---------------------------------------------------------------------------
 led = Pin("LED", Pin.OUT)
 
-stby_l = Pin(5,  Pin.OUT); stby_l.high()     # Left H-bridge STBY — must be HIGH to enable
-stby_r = Pin(13, Pin.OUT); stby_r.high()     # Right H-bridge STBY
+ena_pwm = PWM(Pin(3)); ena_pwm.freq(1000)   # Left enable
+in1 = Pin(4, Pin.OUT)                        # Left dir 1
+in2 = Pin(5, Pin.OUT)                        # Left dir 2
 
-ena_pwm = PWM(Pin(2)); ena_pwm.freq(1000)   # Left enable
-in1 = Pin(3, Pin.OUT)                        # Left dir 1
-in2 = Pin(4, Pin.OUT)                        # Left dir 2
-
-enb_pwm = PWM(Pin(10)); enb_pwm.freq(1000)   # Right enable
 in3 = Pin(11, Pin.OUT)                       # Right dir 1
 in4 = Pin(12, Pin.OUT)                       # Right dir 2
+enb_pwm = PWM(Pin(13)); enb_pwm.freq(1000)  # Right enable
 
 # ---------------------------------------------------------------------------
 # Encoder hardware
@@ -484,6 +480,34 @@ def _handle(cmd_dict):
             return {"status": "ok" if ok else "error",
                     "message": f"Rotating {dir_}" if ok else "estop active"}
 
+        elif cmd == "set_speed":
+            # Direct per-motor PWM for continuous velocity streaming.
+            # No ramp, no blocking — encoder counting still works because
+            # left_dir/right_dir are set before any IRQ fires.
+            left_dir  = int(cmd_dict.get("left_dir",  0))  # +1 fwd, -1 back, 0 stop
+            right_dir = int(cmd_dict.get("right_dir", 0))
+            speed     = int(cmd_dict.get("speed",     0))  # 0–100 %
+            if nav.estop:
+                return {"status": "error", "message": "estop active"}
+            nav.left_dir      = left_dir
+            nav.right_dir     = right_dir
+            nav.is_moving     = (left_dir != 0 or right_dir != 0)
+            nav.move_duration = 0   # disable timed auto-stop
+            nav.rot_duration  = 0
+            if left_dir > 0:   _lf()
+            elif left_dir < 0: _lb()
+            else:              _ls()
+            if right_dir > 0:   _rf()
+            elif right_dir < 0: _rb()
+            else:               _rs()
+            pwm = _pct_to_pwm(speed) if speed > 0 else 0
+            ena_pwm.duty_u16(pwm if left_dir  != 0 else 0)
+            enb_pwm.duty_u16(pwm if right_dir != 0 else 0)
+            nav.current_speed = pwm
+            if nav.is_moving:
+                led.on()
+            return {"status": "ok"}
+
         elif cmd == "stop":
             _smooth_stop()
             return {"status": "ok", "message": "stopped"}
@@ -532,9 +556,9 @@ def _handle(cmd_dict):
 
         else:
             return {"status": "error", "message": f"unknown cmd: {cmd}",
-                    "available": ["ping","move","rotate","stop","estop","reset_estop",
-                                  "autonomous","status","get_encoders","reset_encoders",
-                                  "get_battery","diagnostics"]}
+                    "available": ["ping","move","rotate","set_speed","stop","estop",
+                                  "reset_estop","autonomous","status","get_encoders",
+                                  "reset_encoders","get_battery","diagnostics"]}
     except Exception as e:
         nav.total_errors += 1
         return {"status": "error", "message": str(e)}
