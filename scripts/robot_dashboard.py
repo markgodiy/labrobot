@@ -1744,6 +1744,7 @@ FLASHPICO_HTML = """<!DOCTYPE html>
   <div class="card-title"><span class="step" id="s4">4</span>Verify</div>
   <p class="hint">Checks that the motor bridge has reconnected successfully.</p>
   <button class="btn btn-yellow" id="btn-verify" disabled onclick="doVerify()">Verify Connection</button>
+  <button class="btn" style="background:#2a2d3a;color:var(--green);margin-top:6px;font-size:.8rem;padding:8px;" onclick="doRestart()">Restart Bridge</button>
   <pre id="out-verify">Upload firmware first&hellip;</pre>
 </div>
 
@@ -1823,6 +1824,16 @@ async function doVerify(){
     ot('out-verify',(d.output||'')+(d.error?'\\nError: '+d.error:''));
     if(d.ok) ss(4,'done'); else be('btn-verify',true);
   }catch(e){ot('out-verify','Error: '+e);be('btn-verify',true);}
+}
+
+async function doRestart(){
+  ot('out-verify','Restarting bridge...');
+  try{
+    const r=await fetch('/bridge/restart',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d=await r.json();
+    ot('out-verify',(d.output||'')+(d.error?'\nError: '+d.error:''));
+    if(d.ok) setTimeout(()=>{be('btn-verify',true);ot('out-verify',d.output+'\nClick Verify to confirm.');},1000);
+  }catch(e){ot('out-verify','Error: '+e);}
 }
 
 function poll(){fetch('/pico/status').then(r=>r.json()).then(updateUI).catch(()=>{});}
@@ -1982,6 +1993,25 @@ def _pico_do_verify():
     return {'ok': False, 'output': '', 'error': 'Bridge not connected yet. Wait a few seconds and try again.'}
 
 
+def _bridge_restart():
+    import shlex
+    scripts_path = os.path.join(os.path.expanduser('~'), 'lab_ws', 'install', 'labrobot', 'share', 'labrobot', 'scripts')
+    bridge_script = os.path.join(scripts_path, 'serial_motor_bridge.py')
+    cmd = (
+        f'source /opt/ros/jazzy/setup.bash && '
+        f'source ~/lab_ws/install/setup.bash && '
+        f'python3 {bridge_script} --ros-args '
+        f'-p serial_port:=/dev/ttyACM0 -p baudrate:=115200 -p timeout:=1.0 '
+        f'-p reconnect_interval:=5.0 -p wheel_base_m:=0.347 -p wheel_radius_m:=0.0325 '
+        f'-p ticks_per_rev:=3436 -p encoder_poll_hz:=20.0 '
+        f'-p odom_frame:=odom -p base_frame:=base_footprint '
+        f'>> /tmp/bridge.log 2>&1'
+    )
+    subprocess.Popen(['bash', '-c', f'nohup bash -c {shlex.quote(cmd)} &>/dev/null &'],
+                     start_new_session=True)
+    return {'ok': True, 'output': 'Bridge process started — wait ~3s then click Verify.', 'error': ''}
+
+
 # ── HTTP handler ──────────────────────────────────────────────────────────────
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
@@ -2103,6 +2133,9 @@ class _Handler(BaseHTTPRequestHandler):
             self._respond(200, 'application/json', json.dumps(result).encode())
         elif self.path == '/pico/verify':
             result = _pico_do_verify()
+            self._respond(200, 'application/json', json.dumps(result).encode())
+        elif self.path == '/bridge/restart':
+            result = _bridge_restart()
             self._respond(200, 'application/json', json.dumps(result).encode())
         else:
             self.send_response(404); self.end_headers()
