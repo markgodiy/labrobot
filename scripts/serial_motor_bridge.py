@@ -62,7 +62,7 @@ class SerialMotorBridge(Node):
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_footprint')
         self.declare_parameter('lidar_min_range', 0.25)
-        self.declare_parameter('min_obstacle_distance', 0.7)
+        self.declare_parameter('min_obstacle_distance', 0.55)
         self.declare_parameter('scan_angle_deg', 90.0)
         self.declare_parameter('scan_stale_sec', 1.0)
 
@@ -85,6 +85,7 @@ class SerialMotorBridge(Node):
         
         # LIDAR safety gate state
         self.path_clear = False   # blocked until first scan received
+        self.rear_clear = False   # blocked until first scan received
         self.last_scan_time = None
         self._last_lidar_warn_time = 0.0
 
@@ -483,22 +484,35 @@ class SerialMotorBridge(Node):
             self.last_cmd_vel_time = None
 
     def _scan_callback(self, msg):
-        """Update path_clear from the frontal LIDAR sector."""
+        """Update path_clear and rear_clear from LIDAR sectors."""
         self.last_scan_time = time.time()
         n = len(msg.ranges)
         if n == 0:
             return
         half_idx = int(math.radians(self.scan_angle_deg / 2.0) / msg.angle_increment)
+
         # Front sector: last half_idx indices + first half_idx indices (0° is forward)
         front_indices = list(range(max(0, n - half_idx), n)) + list(range(0, min(half_idx + 1, n)))
-        valid = [msg.ranges[i] for i in front_indices
-                 if self.lidar_min_range < msg.ranges[i] < msg.range_max]
-        obstacle = bool(valid) and min(valid) < self.min_obstacle_distance
-        if obstacle and self.path_clear:
+        front_valid = [msg.ranges[i] for i in front_indices
+                       if self.lidar_min_range < msg.ranges[i] < msg.range_max]
+        front_obstacle = bool(front_valid) and min(front_valid) < self.min_obstacle_distance
+        if front_obstacle and self.path_clear:
             self.get_logger().warn(
-                f"LIDAR: obstacle at {min(valid):.2f}m — forward motion blocked"
+                f"LIDAR: front obstacle at {min(front_valid):.2f}m — forward motion blocked"
             )
-        self.path_clear = not obstacle
+        self.path_clear = not front_obstacle
+
+        # Rear sector: centred on π (index n//2), same angular width
+        mid = n // 2
+        rear_indices = list(range(max(0, mid - half_idx), min(n, mid + half_idx + 1)))
+        rear_valid = [msg.ranges[i] for i in rear_indices
+                      if self.lidar_min_range < msg.ranges[i] < msg.range_max]
+        rear_obstacle = bool(rear_valid) and min(rear_valid) < self.min_obstacle_distance
+        if rear_obstacle and self.rear_clear:
+            self.get_logger().warn(
+                f"LIDAR: rear obstacle at {min(rear_valid):.2f}m — backward motion blocked"
+            )
+        self.rear_clear = not rear_obstacle
 
     def handle_twist(self, msg):
         """Handle Twist message for direct movement control.
@@ -536,12 +550,38 @@ class SerialMotorBridge(Node):
         #   backward = left_dir=+1, right_dir=+1
         #   CCW turn = left_dir=-1, right_dir=+1  (left back, right fwd)
         #   CW turn  = left_dir=+1, right_dir=-1  (left fwd, right back)
-        if abs(linear_x) > 0.02 and not self.path_clear:
+        if linear_x > 0.02 and not self.path_clear:
+            self.send_command_async({"cmd": "stop"})
+            self.last_cmd_vel_time = None
+            return
+        if linear_x < -0.02 and not self.rear_clear:
             self.send_command_async({"cmd": "stop"})
             self.last_cmd_vel_time = None
             return
 
-        if abs(linear_x) > 0.02:
+        has_linear  = abs(linear_x) > 0.02
+        has_angular = abs(angular_z) > 0.05
+
+        if has_linear and has_angular:
+            # Arc motion: drive both wheels in the linear direction but stop
+            # the inner wheel to curve.  Pico only supports a single speed
+            # value, so true differential PWM isn't possible without firmware
+            # changes.  Stopping the inner wheel produces a smooth wide arc.
+            base_dir = -1 if linear_x > 0 else 1      # per verified mapping
+            ratio = min(1.0, abs(linear_x) / MAX_LINEAR_MS)
+            speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
+            if angular_z > 0:
+                # CCW arc: stop left wheel, drive right
+                left_dir, right_dir = 0, base_dir
+            else:
+                # CW arc: drive left, stop right wheel
+                left_dir, right_dir = base_dir, 0
+            self.send_command_async({
+                "cmd": "set_speed",
+                "left_dir": left_dir, "right_dir": right_dir, "speed": speed
+            })
+            self.last_cmd_vel_time = time.time()
+        elif has_linear:
             left_dir, right_dir = (-1, -1) if linear_x > 0 else (1, 1)
             ratio = min(1.0, abs(linear_x) / MAX_LINEAR_MS)
             speed = int(MOTOR_MIN + ratio * (MOTOR_MAX - MOTOR_MIN))
@@ -550,7 +590,7 @@ class SerialMotorBridge(Node):
                 "left_dir": left_dir, "right_dir": right_dir, "speed": speed
             })
             self.last_cmd_vel_time = time.time()
-        elif abs(angular_z) > 0.05:
+        elif has_angular:
             # angular_z > 0 = CCW (left turn); < 0 = CW (right turn)
             left_dir, right_dir = (-1, 1) if angular_z > 0 else (1, -1)
             ratio = min(1.0, abs(angular_z) / MAX_ANGULAR_RS)

@@ -1185,7 +1185,7 @@ REMOTE_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Robot Control</title>
@@ -1193,162 +1193,188 @@ REMOTE_HTML = """<!DOCTYPE html>
 :root{--bg:#0f1117;--card:#1a1d27;--border:#2a2d3a;--text:#e2e8f0;--muted:#8892a4;
       --green:#22c55e;--red:#ef4444;--yellow:#eab308;--blue:#3b82f6;}
 *{box-sizing:border-box;margin:0;padding:0;touch-action:manipulation;-webkit-tap-highlight-color:transparent;}
-html,body{min-height:100vh;background:var(--bg);color:var(--text);
+html,body{height:100dvh;max-height:100dvh;overflow:hidden;background:var(--bg);color:var(--text);
           font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;}
-body{display:flex;flex-direction:column;padding:8px;gap:8px;max-width:480px;margin:0 auto;}
-header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
-header h1{font-size:.95rem;font-weight:700;}
-a.back{font-size:.78rem;color:var(--muted);text-decoration:none;}
-.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
-.card-title{font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
-            color:var(--muted);margin-bottom:8px;}
-.row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;
-     border-bottom:1px solid #1e2233;}
-.row:last-child{border-bottom:none;}
-.label{color:var(--muted);font-size:.82rem;}
-.val{font-size:.9rem;font-weight:600;}
-.dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px;}
-.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
+body{display:flex;flex-direction:column;padding:6px;gap:5px;}
+header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;height:26px;}
+header h1{font-size:.9rem;font-weight:700;}
+a.back{font-size:.75rem;color:var(--muted);text-decoration:none;}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;flex-shrink:0;}
+.card-title{font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+            color:var(--muted);margin-bottom:4px;}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px;}
+.badge{display:inline-block;padding:2px 8px;border-radius:16px;font-size:.68rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;}
 .badge-green{background:#14532d;color:var(--green);border:1px solid #166534;}
 .badge-red{background:#450a0a;color:var(--red);border:1px solid #7f1d1d;}
 .badge-muted{background:#1e2233;color:var(--muted);border:1px solid var(--border);}
 /* Speed row */
-.top-row{display:flex;align-items:center;gap:8px;flex-shrink:0;}
-.top-row label{font-size:.75rem;color:var(--muted);white-space:nowrap;}
-input[type=range]{flex:1;accent-color:var(--blue);height:22px;}
-.spd-val{font-size:.82rem;font-weight:700;min-width:46px;text-align:right;}
-/* D-pad */
-.dpad{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;
-      gap:6px;height:220px;}
-.dp{background:var(--card);border:2px solid var(--border);border-radius:12px;
+.top-row{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.top-row label{font-size:.72rem;color:var(--muted);white-space:nowrap;}
+input[type=range]{flex:1;accent-color:var(--blue);height:20px;}
+.spd-val{font-size:.78rem;font-weight:700;min-width:44px;text-align:right;}
+/* Main area — stacks portrait, side-by-side landscape */
+.main-area{display:flex;flex:1;min-height:0;gap:5px;overflow:hidden;}
+.left-col{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0;min-height:0;overflow:hidden;}
+.right-col{display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0;}
+/* D-Pad */
+.dpad{display:grid;grid-template-columns:1fr 1fr 1fr;grid-template-rows:1fr 1fr 1fr;gap:3px;}
+.dp{background:var(--card);border:2px solid var(--border);border-radius:10px;
     display:flex;align-items:center;justify-content:center;
-    font-size:1.8rem;cursor:pointer;user-select:none;-webkit-user-select:none;}
-.dp.pressed{background:#1e2a50;border-color:var(--blue);}
-.dp-diag{font-size:1.3rem;color:#3a4560;}
-.dp-diag.pressed{color:var(--text);background:#1e2a50;border-color:var(--blue);}
-.dp-stop{background:#2a1a1a;border-color:#7f1d1d;color:var(--red);}
-.dp-stop.pressed{background:#4a1a1a;}
-.vel{text-align:center;font-size:.68rem;color:var(--muted);font-variant-numeric:tabular-nums;}
-/* Follow button */
-.follow-btn{width:100%;padding:14px;border-radius:10px;border:none;font-size:1rem;font-weight:700;
-            cursor:pointer;transition:all .15s;letter-spacing:.03em;}
+    font-size:1.6rem;cursor:pointer;user-select:none;-webkit-user-select:none;transition:all .1s;}
+.dp.pressed{background:rgba(30,42,80,0.7);border-color:var(--blue);}
+.dp-diag{font-size:1rem;color:#3a4560;}
+.dp-diag.pressed{color:var(--text);background:rgba(30,42,80,0.7);border-color:var(--blue);}
+.dp-stop{background:rgba(42,26,26,0.6);border-color:#7f1d1d;color:var(--red);}
+.dp-stop.pressed{background:rgba(74,26,26,0.7);}
+.vel{text-align:center;font-size:.65rem;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px;}
+/* LIDAR card */
+.lidar-card{display:flex;align-items:center;gap:8px;flex:1;min-height:0;overflow:hidden;}
+.lidar-wrap{position:relative;flex-shrink:0;}
+.lidar-wrap canvas{display:block;border-radius:50%;background:#0a0c14;}
+.dist-grid{display:grid;grid-template-columns:auto auto;gap:1px 6px;font-size:.7rem;font-variant-numeric:tabular-nums;}
+.dist-grid .dl{color:var(--muted);}
+.dist-grid .dv{font-weight:700;}
+/* Follow strip */
+.follow-card{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow:hidden;}
+.follow-btn{padding:6px 12px;border-radius:8px;border:none;font-size:.78rem;font-weight:700;
+            cursor:pointer;transition:all .15s;white-space:nowrap;flex-shrink:0;}
 .follow-btn.enable{background:#14532d;color:var(--green);border:2px solid #166534;}
 .follow-btn.disable{background:#450a0a;color:var(--red);border:2px solid #7f1d1d;}
-/* Person metrics */
-.metrics-strip{display:flex;gap:0;}
-.metric-cell{flex:1;text-align:center;padding:8px 4px;border-right:1px solid var(--border);}
-.metric-cell:last-child{border-right:none;}
-.metric-big{font-size:1.3rem;font-weight:700;line-height:1.1;}
-.metric-label{font-size:.65rem;color:var(--muted);text-transform:uppercase;margin-top:2px;}
+.fm-metrics{display:flex;gap:8px;font-size:.7rem;overflow:hidden;}
+.fm-metrics span{white-space:nowrap;}
+.fm-val{font-weight:700;}
 /* Lateral bar */
-.lat-bar-wrap{position:relative;height:36px;margin:4px 0 2px;}
-.lat-bar-bg{position:absolute;inset:8px 0;background:#1e2233;border-radius:4px;}
-.lat-bar-fill{position:absolute;top:8px;bottom:8px;background:#3b82f630;transition:all .2s;}
-.lat-dot{position:absolute;top:50%;width:20px;height:20px;border-radius:50%;
+.lat-bar-wrap{position:relative;height:22px;width:100%;margin:1px 0;}
+.lat-bar-bg{position:absolute;inset:4px 0;background:#1e2233;border-radius:4px;}
+.lat-bar-fill{position:absolute;top:4px;bottom:4px;background:#3b82f630;transition:all .2s;}
+.lat-dot{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;
          transform:translate(-50%,-50%);transition:left .2s;}
-.lat-labels{display:flex;justify-content:space-between;font-size:.62rem;color:var(--muted);margin-top:1px;}
-/* LIDAR */
-.lidar-wrap{display:flex;justify-content:center;}
-canvas{border-radius:50%;background:#0a0c14;display:block;}
+.lat-labels{display:flex;justify-content:space-between;font-size:.55rem;color:var(--muted);}
+/* System strip */
+.sys-strip{display:flex;gap:8px;flex-wrap:wrap;font-size:.72rem;align-items:center;}
+.sys-strip .sl{color:var(--muted);}
+.sys-strip .sv{font-weight:600;}
 /* E-Stop */
-.estop-bar{display:flex;gap:8px;}
-.estop-bar button{flex:1;padding:14px;border-radius:10px;font-size:.95rem;font-weight:700;
+.estop-bar{display:flex;gap:6px;flex-shrink:0;}
+.estop-bar button{flex:1;padding:12px;border-radius:8px;font-size:.88rem;font-weight:700;
                   cursor:pointer;letter-spacing:.03em;border:2px solid;}
 .es-stop{background:#450a0a;color:var(--red);border-color:#7f1d1d;}
 .es-reset{background:#14532d;color:var(--green);border-color:#166534;}
+/* ── Portrait ── */
+@media (orientation:portrait){
+  body{max-width:480px;margin:0 auto;}
+  .main-area{flex-direction:column;}
+  .right-col{order:-1;}
+  .dpad{width:180px;height:180px;}
+  .lidar-wrap canvas{width:140px;height:140px;}
+  .lat-section{display:none;}
+}
+/* ── Landscape ── */
+@media (orientation:landscape){
+  body{max-width:100%;padding:4px 8px;padding-left:max(8px,env(safe-area-inset-left));
+       padding-right:max(8px,env(safe-area-inset-right));}
+  header{height:20px;}
+  header h1{font-size:.8rem;}
+  .top-row{height:20px;}
+  .main-area{flex-direction:row;}
+  .left-col{flex:1;overflow-y:auto;}
+  .right-col{width:220px;justify-content:center;}
+  .dpad{width:190px;height:190px;}
+  .lidar-wrap canvas{width:140px;height:140px;}
+  .card{padding:5px 8px;}
+  .estop-bar button{padding:6px;}
+  .estop-bar{height:34px;}
+  .lat-section{display:block;}
+}
 </style>
 </head>
 <body>
 
 <header>
   <h1>&#127918; Robot Control</h1>
-  <div style="display:flex;align-items:center;gap:8px;">
+  <div style="display:flex;align-items:center;gap:6px;">
     <span id="m-mode-badge" class="badge badge-muted">IDLE</span>
     <span id="m-conn-dot" class="dot" style="background:var(--muted)"></span>
     <a class="back" href="/">Dashboard</a>
   </div>
 </header>
 
-<!-- ── D-Pad Remote ── -->
-<div class="card">
-  <div class="card-title">Remote Control</div>
-  <div class="top-row">
-    <label>Speed</label>
-    <input type="range" id="spd" min="0.05" max="0.5" step="0.05" value="0.25"
-      oninput="spd=+this.value;document.getElementById('sv').textContent=spd.toFixed(2)+' m/s'">
-    <span class="spd-val" id="sv">0.25 m/s</span>
-  </div>
-  <div class="dpad" style="margin-top:8px;">
-    <div class="dp dp-diag" id="b-fl">&#8598;</div>
-    <div class="dp" id="b-fwd">&#9650;</div>
-    <div class="dp dp-diag" id="b-fr">&#8599;</div>
-    <div class="dp" id="b-left">&#9664;</div>
-    <div class="dp dp-stop" id="b-stop">&#9632;</div>
-    <div class="dp" id="b-right">&#9654;</div>
-    <div class="dp dp-diag" id="b-bl">&#8601;</div>
-    <div class="dp" id="b-back">&#9660;</div>
-    <div class="dp dp-diag" id="b-br">&#8600;</div>
-  </div>
-  <div class="vel" id="vel" style="margin-top:4px;">v: 0.00 m/s &nbsp; &#969;: 0.00 rad/s</div>
+<div class="top-row">
+  <label>Speed</label>
+  <input type="range" id="spd" min="0.05" max="0.5" step="0.05" value="0.25"
+    oninput="spd=+this.value;document.getElementById('sv').textContent=spd.toFixed(2)+' m/s'">
+  <span class="spd-val" id="sv">0.25 m/s</span>
 </div>
 
-<!-- ── Follow-Me ── -->
-<div class="card">
-  <div class="card-title">Follow-Me</div>
-  <button id="m-fm-btn" class="follow-btn enable" onclick="toggleFollow()">&#9654; Enable Follow-Me</button>
-  <div class="metrics-strip" style="margin-top:8px;">
-    <div class="metric-cell">
-      <div id="m-dist" class="metric-big" style="color:var(--muted)">—</div>
-      <div class="metric-label">Distance</div>
+<div class="main-area">
+  <!-- Left column: LIDAR + follow + system -->
+  <div class="left-col">
+    <div class="card lidar-card">
+      <div class="lidar-wrap">
+        <canvas id="m-lidar" width="150" height="150"></canvas>
+      </div>
+      <div>
+        <div class="card-title" style="margin-bottom:2px;">Radar
+          <span style="font-weight:400;font-size:.58rem;margin-left:4px;">
+            <span style="color:var(--red);">&#9679;</span>&lt;0.5
+            <span style="color:var(--yellow);">&#9679;</span>&lt;1
+            <span style="color:var(--green);">&#9679;</span>&gt;1
+          </span>
+        </div>
+        <div class="dist-grid">
+          <span class="dl">Front</span><span class="dv" id="m-lf">--</span>
+          <span class="dl">Left</span><span class="dv" id="m-ll">--</span>
+          <span class="dl">Right</span><span class="dv" id="m-lr">--</span>
+          <span class="dl">Rear</span><span class="dv" id="m-lrear">--</span>
+        </div>
+      </div>
     </div>
-    <div class="metric-cell">
-      <div id="m-lat-num" class="metric-big" style="color:var(--muted)">—</div>
-      <div class="metric-label">Lateral</div>
+
+    <div class="card follow-card">
+      <button id="m-fm-btn" class="follow-btn enable" onclick="toggleFollow()">&#9654; Follow</button>
+      <div class="fm-metrics">
+        <span>Dist:<span class="fm-val" id="m-dist">--</span></span>
+        <span>Lat:<span class="fm-val" id="m-lat-num">--</span></span>
+        <span>Cnf:<span class="fm-val" id="m-conf">--</span></span>
+      </div>
+      <div class="lat-section" style="width:100%;">
+        <div class="lat-bar-wrap">
+          <div class="lat-bar-bg"></div>
+          <div id="m-lat-fill" class="lat-bar-fill" style="left:50%;width:0;"></div>
+          <div id="m-lat-dot" class="lat-dot" style="left:50%;background:var(--muted);display:none;"></div>
+        </div>
+        <div class="lat-labels"><span>&#9664; 1.5m</span><span>Centre</span><span>1.5m &#9654;</span></div>
+      </div>
     </div>
-    <div class="metric-cell">
-      <div id="m-conf" class="metric-big" style="color:var(--muted)">—</div>
-      <div class="metric-label">Confidence</div>
+
+    <div class="card" style="padding:6px 10px;">
+      <div class="sys-strip">
+        <span><span class="sl">Det:</span><span id="m-det" class="sv"><span class="badge badge-muted" style="font-size:.6rem;padding:1px 6px;">None</span></span></span>
+        <span><span class="sl">V:</span><span id="m-bv" class="sv">--</span></span>
+        <span><span class="sl">Bat:</span><span id="m-bsoc" class="sv">--</span></span>
+        <span><span class="sl">Brg:</span><span id="m-bridge" class="sv">--</span></span>
+        <span><span class="sl">ES:</span><span id="m-estop" class="sv">--</span></span>
+      </div>
     </div>
   </div>
-  <div style="margin-top:4px;">
-    <div class="lat-bar-wrap">
-      <div class="lat-bar-bg"></div>
-      <div id="m-lat-fill" class="lat-bar-fill" style="left:50%;width:0;"></div>
-      <div id="m-lat-dot" class="lat-dot" style="left:50%;background:var(--muted);display:none;"></div>
+
+  <!-- Right column: D-Pad -->
+  <div class="right-col">
+    <div class="dpad">
+      <div class="dp dp-diag" id="b-fl">&#8598;</div>
+      <div class="dp" id="b-fwd">&#9650;</div>
+      <div class="dp dp-diag" id="b-fr">&#8599;</div>
+      <div class="dp" id="b-left">&#9664;</div>
+      <div class="dp dp-stop" id="b-stop">&#9632;</div>
+      <div class="dp" id="b-right">&#9654;</div>
+      <div class="dp dp-diag" id="b-bl">&#8601;</div>
+      <div class="dp" id="b-back">&#9660;</div>
+      <div class="dp dp-diag" id="b-br">&#8600;</div>
     </div>
-    <div class="lat-labels"><span>&#9664; 1.5m</span><span>Centre</span><span>1.5m &#9654;</span></div>
+    <div class="vel" id="vel">v: 0.00 &nbsp; &#969;: 0.00</div>
   </div>
 </div>
 
-<!-- ── LIDAR ── -->
-<div class="card">
-  <div class="card-title">LIDAR &nbsp;
-    <span style="font-weight:400;font-size:.65rem;">
-      <span style="color:var(--red);">&#9679;</span>&lt;0.5m
-      <span style="color:var(--yellow);">&#9679;</span>&lt;1m
-      <span style="color:var(--green);">&#9679;</span>&gt;1m
-    </span>
-  </div>
-  <div class="lidar-wrap"><canvas id="m-lidar" width="280" height="280"></canvas></div>
-  <div style="display:flex;justify-content:space-around;margin-top:8px;">
-    <div style="text-align:center;"><div style="color:var(--muted);font-size:.68rem;">FRONT</div><div id="m-lf" class="val">—</div></div>
-    <div style="text-align:center;"><div style="color:var(--muted);font-size:.68rem;">LEFT</div><div id="m-ll" class="val">—</div></div>
-    <div style="text-align:center;"><div style="color:var(--muted);font-size:.68rem;">RIGHT</div><div id="m-lr" class="val">—</div></div>
-    <div style="text-align:center;"><div style="color:var(--muted);font-size:.68rem;">REAR</div><div id="m-lrear" class="val">—</div></div>
-  </div>
-</div>
-
-<!-- ── System ── -->
-<div class="card">
-  <div class="card-title">System</div>
-  <div class="row"><span class="label">Detection</span><span id="m-det"><span class="badge badge-muted">None</span></span></div>
-  <div class="row"><span class="label">Voltage</span><span id="m-bv" class="val">—</span></div>
-  <div class="row"><span class="label">Charge</span><span id="m-bsoc" class="val">—</span></div>
-  <div class="row"><span class="label">Bridge</span><span id="m-bridge">—</span></div>
-  <div class="row"><span class="label">E-Stop</span><span id="m-estop">—</span></div>
-</div>
-
-<!-- ── E-Stop ── -->
 <div class="estop-bar">
   <button class="es-stop" onclick="sendEstop()">&#9632; E-STOP</button>
   <button class="es-reset" onclick="resetEstop()">&#10003; Reset</button>
@@ -1366,8 +1392,18 @@ const distColor = d => {
   return 'var(--muted)';
 };
 
+// ── Canvas sizing ────────────────────────────────────────────────────────────
+function sizeCanvas() {
+  const c = $('m-lidar');
+  const sz = Math.round(c.parentElement.getBoundingClientRect().width);
+  if (c.width !== sz) { c.width = sz; c.height = sz; }
+}
+window.addEventListener('resize', sizeCanvas);
+window.addEventListener('orientationchange', () => setTimeout(sizeCanvas, 200));
+setTimeout(sizeCanvas, 50);
+
 // ── D-Pad logic ──────────────────────────────────────────────────────────────
-let spd = 0.25, iv = null, adir = null, arcTog = false;
+let spd = 0.25, iv = null, adir = null;
 const MOVES = {
   fwd:[1,0], back:[-1,0], left:[0,1], right:[0,-1],
   fl:[1,1],  fr:[1,-1],   bl:[-1,-1], br:[-1,1]
@@ -1376,7 +1412,7 @@ const MOVES = {
 function send(lin, ang) {
   fetch('/cmd', {method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({linear:lin, angular:ang})}).catch(()=>{});
-  $('vel').textContent = 'v: '+lin.toFixed(2)+' m/s   \u03c9: '+ang.toFixed(2)+' rad/s';
+  $('vel').textContent = 'v: '+lin.toFixed(2)+'   \u03c9: '+ang.toFixed(2);
 }
 
 function go(dir) {
@@ -1384,16 +1420,10 @@ function go(dir) {
   adir = dir;
   $('b-'+dir).classList.add('pressed');
   const [lf, af] = MOVES[dir];
-  const isDiag = lf !== 0 && af !== 0;
   const lin = lf * spd;
   const ang = af * Math.max(0.5, spd * 2.5);
-  if (!isDiag) {
-    send(lin, ang);
-    if (!iv) iv = setInterval(() => send(lin, ang), 100);
-  } else {
-    arcTog = false; send(lin, 0);
-    if (!iv) iv = setInterval(() => { arcTog = !arcTog; send(arcTog ? 0 : lin, arcTog ? ang : 0); }, 150);
-  }
+  send(lin, ang);
+  if (!iv) iv = setInterval(() => send(lin, ang), 100);
 }
 
 function stop() {
@@ -1448,34 +1478,30 @@ function drawLidar(pts, ts) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   const W=canvas.width, H=canvas.height, cx=W/2, cy=H/2;
-  const maxDist=3.0, scale=(Math.min(W,H)/2-18)/maxDist;
+  const maxDist=3.0, scale=(Math.min(W,H)/2-10)/maxDist;
   ctx.clearRect(0,0,W,H); ctx.fillStyle='#0a0c14'; ctx.fillRect(0,0,W,H);
   for(let r=1;r<=maxDist;r++){
-    ctx.strokeStyle='#1e2538';ctx.lineWidth=1;
+    ctx.strokeStyle='#1e253880';ctx.lineWidth=1;
     ctx.beginPath();ctx.arc(cx,cy,r*scale,0,2*Math.PI);ctx.stroke();
-    ctx.fillStyle='#3a4560';ctx.font='8px monospace';ctx.textAlign='left';
-    ctx.fillText(r+'m',cx+r*scale+2,cy+4);
   }
-  ctx.strokeStyle='#1e2538';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(cx,cy-maxDist*scale-6);ctx.lineTo(cx,cy+maxDist*scale+6);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(cx-maxDist*scale-6,cy);ctx.lineTo(cx+maxDist*scale+6,cy);ctx.stroke();
-  ctx.strokeStyle='#ef444470';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+  ctx.strokeStyle='#1e253860';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(cx,0);ctx.lineTo(cx,H);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(0,cy);ctx.lineTo(W,cy);ctx.stroke();
+  ctx.strokeStyle='#ef444450';ctx.lineWidth=1;ctx.setLineDash([4,4]);
   ctx.beginPath();ctx.arc(cx,cy,0.5*scale,0,2*Math.PI);ctx.stroke();ctx.setLineDash([]);
   if(!ts||age(ts)>5){
-    ctx.fillStyle='#3a4560';ctx.font='12px monospace';ctx.textAlign='center';
-    ctx.fillText('No LIDAR',cx,cy+6);
+    ctx.fillStyle='#3a4560';ctx.font='10px monospace';ctx.textAlign='center';
+    ctx.fillText('No LIDAR',cx,cy+4);
   } else {
     for(const [angle,dist] of pts){
       const d=Math.min(dist,maxDist);
       const px=cx+Math.sin(angle)*d*scale, py=cy+Math.cos(angle)*d*scale;
       ctx.fillStyle=dist<0.5?'#ef4444':dist<1.0?'#eab308':'#22c55e';
-      ctx.beginPath();ctx.arc(px,py,2.5,0,2*Math.PI);ctx.fill();
+      ctx.beginPath();ctx.arc(px,py,2,0,2*Math.PI);ctx.fill();
     }
   }
   ctx.fillStyle='#3b82f6';
-  ctx.beginPath();ctx.moveTo(cx,cy-9);ctx.lineTo(cx-6,cy+6);ctx.lineTo(cx+6,cy+6);ctx.closePath();ctx.fill();
-  ctx.fillStyle='#3b82f6';ctx.font='8px monospace';ctx.textAlign='center';
-  ctx.fillText('FWD',cx,cy-maxDist*scale-5);ctx.textAlign='left';
+  ctx.beginPath();ctx.moveTo(cx,cy-6);ctx.lineTo(cx-4,cy+4);ctx.lineTo(cx+4,cy+4);ctx.closePath();ctx.fill();
 }
 
 // ── Poll ─────────────────────────────────────────────────────────────────────
@@ -1488,16 +1514,15 @@ async function poll() {
     const ba = d.battery || {};
     const st = d.status || {};
 
-    // Follow-me state
     followEnabled = !!fm.enabled;
     const btn = $('m-fm-btn');
     if (followEnabled) {
-      btn.innerHTML = '&#9209; Disable Follow-Me';
+      btn.innerHTML = '&#9209; Stop Follow';
       btn.className = 'follow-btn disable';
       $('m-mode-badge').className = 'badge badge-green';
       $('m-mode-badge').textContent = 'FOLLOWING';
     } else {
-      btn.innerHTML = '&#9654; Enable Follow-Me';
+      btn.innerHTML = '&#9654; Follow';
       btn.className = 'follow-btn enable';
       $('m-mode-badge').className = 'badge badge-muted';
       $('m-mode-badge').textContent = 'IDLE';
@@ -1505,48 +1530,46 @@ async function poll() {
 
     $('m-conn-dot').style.background = d.bridge_connected ? 'var(--green)' : 'var(--red)';
 
-    // Person metrics
     const distV = fm.distance_m, latV = fm.lateral_m;
-    $('m-dist').textContent = distV != null ? distV.toFixed(2)+' m' : '—';
+    $('m-dist').textContent = distV != null ? distV.toFixed(1)+'m' : '--';
     $('m-dist').style.color = distColor(distV);
-    $('m-lat-num').textContent = latV != null ? (latV>=0?'+':'')+latV.toFixed(2)+' m' : '—';
+    $('m-lat-num').textContent = latV != null ? (latV>=0?'+':'')+latV.toFixed(1)+'m' : '--';
     $('m-lat-num').style.color = latV!=null?(Math.abs(latV)<0.1?'var(--green)':Math.abs(latV)<0.5?'var(--yellow)':'var(--red)'):'var(--muted)';
-    $('m-conf').textContent = fm.confidence!=null ? (fm.confidence*100).toFixed(0)+'%' : '—';
+    $('m-conf').textContent = fm.confidence!=null ? (fm.confidence*100).toFixed(0)+'%' : '--';
     $('m-conf').style.color = fm.confidence>0.7?'var(--green)':fm.confidence>0.4?'var(--yellow)':'var(--muted)';
 
-    // Lateral bar
     const dot = $('m-lat-dot'), fill = $('m-lat-fill');
-    if (latV != null) {
-      const norm = Math.max(-1, Math.min(1, latV/1.5));
-      const pct = 50 + norm*50;
-      const dc = Math.abs(latV)<0.1?'var(--green)':Math.abs(latV)<0.5?'var(--yellow)':'var(--red)';
-      dot.style.display='block'; dot.style.left=pct+'%'; dot.style.background=dc;
-      fill.style.left = Math.min(50,pct)+'%';
-      fill.style.width = Math.abs(pct-50)+'%';
-      fill.style.background = dc+'40';
-    } else {
-      dot.style.display='none'; fill.style.width='0';
+    if (dot && fill) {
+      if (latV != null) {
+        const norm = Math.max(-1, Math.min(1, latV/1.5));
+        const pct = 50 + norm*50;
+        const dc = Math.abs(latV)<0.1?'var(--green)':Math.abs(latV)<0.5?'var(--yellow)':'var(--red)';
+        dot.style.display='block'; dot.style.left=pct+'%'; dot.style.background=dc;
+        fill.style.left = Math.min(50,pct)+'%';
+        fill.style.width = Math.abs(pct-50)+'%';
+        fill.style.background = dc+'40';
+      } else {
+        dot.style.display='none'; fill.style.width='0';
+      }
     }
 
     $('m-det').innerHTML = fm.person_detected
-      ? '<span class="badge badge-green">Person</span>'
-      : '<span class="badge badge-muted">None</span>';
+      ? '<span class="badge badge-green" style="font-size:.6rem;padding:1px 6px;">Person</span>'
+      : '<span class="badge badge-muted" style="font-size:.6rem;padding:1px 6px;">None</span>';
 
-    // System
-    $('m-bv').textContent  = ba.voltage  != null ? ba.voltage.toFixed(2)+' V' : '—';
+    $('m-bv').textContent  = ba.voltage  != null ? ba.voltage.toFixed(1)+'V' : '--';
     $('m-bv').style.color  = ba.voltage  != null ? (ba.voltage>12.5?'var(--green)':ba.voltage>11.8?'var(--yellow)':'var(--red)') : 'var(--muted)';
-    $('m-bsoc').textContent = ba.soc_pct != null ? ba.soc_pct+'%' : '—';
+    $('m-bsoc').textContent = ba.soc_pct != null ? ba.soc_pct+'%' : '--';
     $('m-bridge').innerHTML = d.bridge_connected
-      ? '<span style="color:var(--green)">Connected</span>'
-      : '<span style="color:var(--red)">Disconnected</span>';
+      ? '<span style="color:var(--green)">OK</span>'
+      : '<span style="color:var(--red)">X</span>';
     const estop = st.emergency_stop;
     $('m-estop').innerHTML = estop===false ? '<span style="color:var(--green)">OK</span>'
-                           : estop===true  ? '<span style="color:var(--red)">ACTIVE</span>'
-                           : '<span style="color:var(--muted)">—</span>';
+                           : estop===true  ? '<span style="color:var(--red)">!!</span>'
+                           : '<span style="color:var(--muted)">--</span>';
 
-    // LIDAR
     drawLidar(li.pts||[], li.ts);
-    const df = v => v==null?'—':v.toFixed(1)+' m';
+    const df = v => v==null?'--':v.toFixed(1)+'m';
     const dc = v => v==null?'var(--muted)':v<0.7?'var(--red)':v<1.0?'var(--yellow)':'var(--green)';
     $('m-lf').textContent = df(li.front_m); $('m-lf').style.color = dc(li.front_m);
     $('m-ll').textContent = df(li.left_m);  $('m-ll').style.color = dc(li.left_m);
