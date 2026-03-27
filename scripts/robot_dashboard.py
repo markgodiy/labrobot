@@ -35,14 +35,17 @@ from rcl_interfaces.msg import Log
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 import glob as _glob
+import ipaddress
 import json
 import math
 import os as _os
+import secrets
 import subprocess
 import threading
 import time
 import urllib.request as _urllib_request
 from collections import deque
+from http.cookies import SimpleCookie
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -56,6 +59,31 @@ _node: 'RobotDashboardNode | None' = None
 _log_lock   = threading.Lock()
 _log_buffer: deque = deque(maxlen=500)
 _log_total  = 0   # monotonic count, never resets
+
+# ── auth & session (opt-in via DASHBOARD_PUBLIC=1) ───────────────────────────
+_AUTH_ENABLED = bool(_os.environ.get('DASHBOARD_PUBLIC', ''))
+_SESSION_MINUTES = int(_os.environ.get('DASHBOARD_SESSION_MINUTES', '5'))
+_COOLDOWN_MINUTES = int(_os.environ.get('DASHBOARD_COOLDOWN_MINUTES', '10'))
+_CORS_ORIGIN = _os.environ.get('DASHBOARD_CORS_ORIGIN', '*')
+
+_session_lock = threading.Lock()
+_active_session: dict | None = None   # {token, user, ip, login_time, expires}
+_cooldowns: dict = {}                  # {ip: earliest_login_timestamp}
+_invite_codes: dict = {}               # {code: {created, label}}
+_invite_lock = threading.Lock()
+_request_log: deque = deque(maxlen=200)
+_cmd_rate: dict = {}                   # {ip: deque_of_timestamps}
+
+_PRIVATE_NETS = (
+    ipaddress.ip_network('10.0.0.0/8'),
+    ipaddress.ip_network('172.16.0.0/12'),
+    ipaddress.ip_network('192.168.0.0/16'),
+    ipaddress.ip_network('127.0.0.0/8'),
+)
+
+_DANGEROUS_ENDPOINTS = {'/system/shutdown', '/pico/release_port', '/pico/flash',
+                        '/pico/upload', '/bridge/restart'}
+_DANGEROUS_PAGES = {'/flashpico'}
 _metrics: dict = {
     "ts": 0,
     "bridge_connected": False,
@@ -1587,6 +1615,706 @@ poll(); setInterval(poll, 400);
 MFOLLOW_HTML = REMOTE_HTML
 
 
+# ── Public page (simplified dashboard for remote guests) ─────────────────────
+PUBLIC_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TR45H — Remote Control</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+    --text: #e2e8f0; --muted: #8892a4;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308; --blue: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+         font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px;
+         display: flex; flex-direction: column; min-height: 100vh; }
+  header { display: flex; align-items: center; justify-content: space-between;
+           margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 1.25rem; font-weight: 600; }
+  .badge { font-size: .8rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.green  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.red    { background: var(--red); }
+  .dot.yellow { background: var(--yellow); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  .card-title { font-size: .68rem; font-weight: 700; letter-spacing: 1px;
+                text-transform: uppercase; color: var(--muted); margin-bottom: 14px; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 9px; }
+  .lbl  { font-size: .8rem; color: var(--muted); }
+  .val  { font-size: 1rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .unit { font-size: .7rem; color: var(--muted); margin-left: 2px; }
+  .big  { font-size: 1.45rem; }
+  .green { color: var(--green); } .red { color: var(--red); }
+  .yellow{ color: var(--yellow);} .muted{ color: var(--muted); }
+  .stale { opacity: .35; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+  #lidar-canvas { display:block; width:100%; height:auto; border-radius:6px; background:#0a0c14; }
+
+  /* ── layout: 2-column, lidar left, controls right ── */
+  .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 1; }
+  @media (max-width: 800px) { .main-grid { grid-template-columns: 1fr; } }
+
+  /* ── telemetry row under lidar ── */
+  .telem-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  @media (max-width: 500px) { .telem-row { grid-template-columns: 1fr; } }
+
+  /* ── big d-pad ── */
+  .dpad { display: grid; grid-template-columns: repeat(3, 80px); grid-template-rows: repeat(3, 80px);
+          gap: 8px; margin: 0 auto; }
+  @media (min-width: 500px) {
+    .dpad { grid-template-columns: repeat(3, 100px); grid-template-rows: repeat(3, 100px); gap: 10px; }
+  }
+  .dc-btn { background: #1e2130; border: 1px solid var(--border); border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 2rem; cursor: pointer; user-select: none; transition: background .08s;
+            -webkit-tap-highlight-color: transparent; }
+  .dc-btn:active, .dc-btn.pressed { background: #2a3050; border-color: var(--blue); }
+  .dc-stop { background: #2a1a1a !important; border-color: #7f1d1d !important; color: var(--red); }
+  .dc-stop:active { background: #4a1a1a !important; }
+
+  /* ── session bar ── */
+  .session-bar { display: flex; align-items: center; justify-content: space-between;
+                 background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+                 padding: 10px 16px; margin-bottom: 16px; font-size: .85rem; }
+  .session-bar .user-info { display: flex; align-items: center; gap: 10px; }
+  .session-bar .timer { font-variant-numeric: tabular-nums; color: var(--yellow); font-weight: 600; }
+  .logout-btn { background: #2a1a1a; color: var(--red); border: 1px solid #7f1d1d;
+                border-radius: 6px; padding: 5px 14px; font-size: .8rem; cursor: pointer; }
+  .logout-btn:hover { background: #4a1a1a; }
+
+  /* ── speed slider ── */
+  .speed-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+               max-width: 320px; margin-left: auto; margin-right: auto; width: 100%; }
+</style>
+</head>
+<body>
+<header>
+  <h1>&#129302; TR45H — Remote Control</h1>
+  <span id="ts" style="font-size:.7rem;color:var(--muted)">Last update: —</span>
+  <div class="badge"><span class="dot yellow" id="conn-dot"></span><span id="conn-text">Connecting…</span></div>
+</header>
+
+<div class="session-bar" id="session-bar" style="display:none">
+  <div class="user-info">
+    <span>&#128100; <strong id="sess-user">—</strong></span>
+    <span class="timer">&#9202; <span id="sess-timer">—</span></span>
+  </div>
+  <button class="logout-btn" onclick="doLogout()">Leave</button>
+</div>
+
+<div class="main-grid">
+
+  <!-- ── LEFT: lidar + telemetry ── -->
+  <div>
+    <div class="card">
+      <div class="card-title">LIDAR — Top-Down View <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:.7rem;color:var(--muted)">● red &lt;0.5 m &nbsp;● yellow &lt;1 m &nbsp;● green &gt;1 m</span></div>
+      <canvas id="lidar-canvas" width="520" height="520"></canvas>
+    </div>
+    <div class="telem-row">
+      <div class="card">
+        <div class="card-title">Navigation</div>
+        <div class="row"><span class="lbl">Mode</span><span class="val" id="nav-mode">—</span></div>
+        <div class="row"><span class="lbl">Action</span><span class="val" id="nav-action">—</span></div>
+        <div class="row"><span class="lbl">Path</span><span class="val" id="nav-path">—</span></div>
+        <hr>
+        <div class="row"><span class="lbl">Front</span><span><span class="val" id="lidar-front">—</span><span class="unit">m</span></span></div>
+        <div class="row"><span class="lbl">Left</span><span><span class="val" id="lidar-left">—</span><span class="unit">m</span></span></div>
+        <div class="row"><span class="lbl">Right</span><span><span class="val" id="lidar-right">—</span><span class="unit">m</span></span></div>
+        <div class="row"><span class="lbl">Rear</span><span><span class="val" id="lidar-rear">—</span><span class="unit">m</span></span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Battery</div>
+        <div class="row"><span class="lbl">Voltage</span><span><span class="val big" id="bv">—</span><span class="unit">V</span></span></div>
+        <div class="row"><span class="lbl">Current</span><span><span class="val" id="bi">—</span><span class="unit">mA</span></span></div>
+        <div class="row"><span class="lbl">Charge</span><span><span class="val" id="bsoc">—</span><span class="unit">%</span></span></div>
+        <hr>
+        <div class="card-title" style="margin-top:4px">Odometry</div>
+        <div class="row"><span class="lbl">X</span><span><span class="val" id="ox">—</span><span class="unit">m</span></span></div>
+        <div class="row"><span class="lbl">Y</span><span><span class="val" id="oy">—</span><span class="unit">m</span></span></div>
+        <div class="row"><span class="lbl">Heading</span><span><span class="val" id="oh">—</span><span class="unit">deg</span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: controls ── -->
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center">
+    <div class="card" style="width:100%;max-width:380px;text-align:center">
+      <div class="card-title">Drive</div>
+      <div class="speed-row">
+        <span class="lbl">Speed</span>
+        <input type="range" id="ctrl-spd" min="0.05" max="0.5" step="0.05" value="0.25"
+               style="flex:1;accent-color:var(--blue)"
+               oninput="ctrlSpeed=+this.value;document.getElementById('ctrl-spd-val').textContent=ctrlSpeed.toFixed(2)">
+        <span class="val muted" id="ctrl-spd-val" style="font-size:.85rem;min-width:32px">0.25</span>
+      </div>
+      <div class="dpad">
+        <div></div>
+        <div class="dc-btn" id="dc-fwd">&#9650;</div>
+        <div></div>
+        <div class="dc-btn" id="dc-left">&#9664;</div>
+        <div class="dc-btn dc-stop" id="dc-stop">&#9632;</div>
+        <div class="dc-btn" id="dc-right">&#9654;</div>
+        <div></div>
+        <div class="dc-btn" id="dc-back">&#9660;</div>
+        <div></div>
+      </div>
+      <p style="margin-top:16px;font-size:.75rem;color:var(--muted)">Use arrow keys or tap the buttons. Space = stop.</p>
+    </div>
+    <div class="card" style="width:100%;max-width:380px;margin-top:12px">
+      <div class="card-title">E-Stop</div>
+      <div class="row"><span class="lbl">Status</span><span class="val" id="estop">—</span></div>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button style="flex:1;background:#7a1111;color:#fff;border:1px solid #a33;border-radius:6px;padding:8px;font-size:.85rem;cursor:pointer" onclick="sendEstop()">&#9632; E-STOP</button>
+        <button style="flex:1;background:#0a4a1a;color:#fff;border:1px solid #1a8a3a;border-radius:6px;padding:8px;font-size:.85rem;cursor:pointer" onclick="resetEstop()">&#10003; Reset</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let fails = 0;
+const fmt = (v, d=3) => (v == null) ? '—' : Number(v).toFixed(d);
+const age = ts => ts ? (Date.now()/1000 - ts) : 9999;
+const stale = (el, ts, maxAge=3) => el.classList.toggle('stale', age(ts) > maxAge);
+
+// ── session timer ────────────────────────────────────────────────────────────
+let sessionExpires = 0;
+function updateSessionTimer() {
+  const rem = Math.max(0, Math.floor(sessionExpires - Date.now()/1000));
+  if (rem <= 0) { $('sess-timer').textContent = 'expired'; return; }
+  const m = Math.floor(rem / 60), s = rem % 60;
+  $('sess-timer').textContent = m + ':' + String(s).padStart(2, '0');
+}
+setInterval(updateSessionTimer, 1000);
+
+// ── poll metrics ─────────────────────────────────────────────────────────────
+async function poll() {
+  try {
+    const r = await fetch('/metrics', {signal: AbortSignal.timeout(2000)});
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    fails = 0;
+
+    const dot = $('conn-dot'), txt = $('conn-text');
+    dot.className = 'dot ' + (d.bridge_connected ? 'green' : 'red');
+    txt.textContent = d.bridge_connected ? 'Bridge connected' : 'Bridge disconnected';
+
+    // odometry
+    const o = d.odom;
+    $('ox').textContent = fmt(o.x); $('oy').textContent = fmt(o.y);
+    $('oh').textContent = fmt(o.heading_deg, 1);
+    stale($('ox'), o.ts);
+
+    // battery
+    const b = d.battery;
+    $('bv').textContent = b.voltage != null ? fmt(b.voltage, 2) : '—';
+    $('bi').textContent = b.current_mA != null ? fmt(b.current_mA, 0) : '—';
+    $('bsoc').textContent = b.soc_pct != null ? b.soc_pct : '—';
+    const vc = b.voltage == null ? '' : b.voltage < 11 ? 'red' : b.voltage < 12 ? 'yellow' : 'green';
+    $('bv').className = 'val big ' + vc;
+    stale($('bv'), b.ts, 20);
+
+    // estop
+    const es = d.status.emergency_stop;
+    $('estop').textContent = es == null ? '—' : (es ? 'ACTIVE' : 'OK');
+    $('estop').className = 'val ' + (es === true ? 'red' : es === false ? 'green' : 'muted');
+
+    // nav
+    const nav = d.nav || {};
+    const navOn = nav.enabled === true;
+    $('nav-mode').textContent = nav.ts ? (navOn ? 'Autonomous' : 'Manual') : '—';
+    $('nav-mode').className = 'val ' + (nav.ts ? (navOn ? 'green' : 'muted') : 'muted');
+    const ACT_LBL = {idle:'— Idle', forward:'▲ Forward', backward:'▼ Backward',
+      rotate_left:'↺ Left', rotate_right:'↻ Right',
+      escape_backward:'⚡ Escape', escape_turn:'⚡ Turn',
+      escape_forward:'⚡ Fwd', post_escape_forward:'▲ Escape+'};
+    const ACT_COL = {idle:'muted', forward:'green', backward:'yellow',
+      rotate_left:'blue', rotate_right:'blue',
+      escape_backward:'red', escape_turn:'red', escape_forward:'red', post_escape_forward:'yellow'};
+    const act = nav.action || 'idle';
+    $('nav-action').textContent = ACT_LBL[act] || act;
+    $('nav-action').className = 'val ' + (ACT_COL[act] || '');
+    const pathOk = nav.path_clear !== false;
+    $('nav-path').textContent = nav.ts ? (pathOk ? 'Clear' : 'Blocked') : '—';
+    $('nav-path').className = 'val ' + (nav.ts ? (pathOk ? 'green' : 'red') : 'muted');
+    stale($('nav-mode'), nav.ts);
+
+    // lidar
+    const li = d.lidar || {};
+    const dc = v => v == null ? '' : v < 0.5 ? 'red' : v < 1.0 ? 'yellow' : 'green';
+    $('lidar-front').textContent = li.front_m != null ? fmt(li.front_m, 1) : '—';
+    $('lidar-left').textContent  = li.left_m  != null ? fmt(li.left_m,  1) : '—';
+    $('lidar-right').textContent = li.right_m != null ? fmt(li.right_m, 1) : '—';
+    $('lidar-rear').textContent  = li.rear_m  != null ? fmt(li.rear_m,  1) : '—';
+    $('lidar-front').className = 'val ' + dc(li.front_m);
+    $('lidar-left').className  = 'val ' + dc(li.left_m);
+    $('lidar-right').className = 'val ' + dc(li.right_m);
+    $('lidar-rear').className  = 'val ' + dc(li.rear_m);
+    stale($('lidar-front'), li.ts);
+    drawLidar(li.pts || [], li.ts);
+
+    $('ts').textContent = 'Last update: ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    if (++fails >= 3) {
+      $('conn-dot').className = 'dot red';
+      $('conn-text').textContent = 'Dashboard unreachable';
+    }
+  }
+}
+poll(); setInterval(poll, 500);
+
+// ── session info poll ────────────────────────────────────────────────────────
+async function pollSession() {
+  try {
+    const r = await fetch('/session/info', {signal: AbortSignal.timeout(2000)});
+    if (!r.ok) return; // no active session — session bar stays hidden
+    const d = await r.json();
+    if (d.user) {
+      $('session-bar').style.display = 'flex';
+      $('sess-user').textContent = d.user;
+      sessionExpires = Date.now()/1000 + d.remaining_s;
+      if (d.remaining_s <= 0) $('sess-timer').textContent = 'expired';
+    }
+  } catch(e) {}
+}
+pollSession(); setInterval(pollSession, 10000);
+
+// ── drive controls ───────────────────────────────────────────────────────────
+let ctrlSpeed = 0.25, ctrlInterval = null, ctrlDir = null;
+const MOVES = {fwd:[1,0], back:[-1,0], left:[0,1], right:[0,-1]};
+
+function sendVel(lin, ang) {
+  fetch('/cmd', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({linear:lin, angular:ang})}).catch(()=>{});
+}
+function ctrlPress(dir) {
+  if (ctrlDir) $('dc-'+ctrlDir).classList.remove('pressed');
+  ctrlDir = dir; $('dc-'+dir).classList.add('pressed');
+  const [lf,af] = MOVES[dir];
+  const lin = lf * ctrlSpeed, ang = af * Math.max(0.5, ctrlSpeed * 2.5);
+  sendVel(lin, ang);
+  if (!ctrlInterval) ctrlInterval = setInterval(() => sendVel(lin, ang), 100);
+}
+function ctrlRelease() {
+  if (ctrlInterval) { clearInterval(ctrlInterval); ctrlInterval = null; }
+  if (ctrlDir) { $('dc-'+ctrlDir).classList.remove('pressed'); ctrlDir = null; }
+  sendVel(0, 0);
+}
+['fwd','back','left','right'].forEach(dir => {
+  const el = $('dc-'+dir);
+  el.addEventListener('mousedown', e => { e.preventDefault(); ctrlPress(dir); });
+  el.addEventListener('mouseup', e => { e.preventDefault(); ctrlRelease(); });
+  el.addEventListener('mouseleave', ctrlRelease);
+  el.addEventListener('touchstart', e => { e.preventDefault(); ctrlPress(dir); }, {passive:false});
+  el.addEventListener('touchend', e => { e.preventDefault(); ctrlRelease(); }, {passive:false});
+  el.addEventListener('touchcancel', ctrlRelease);
+});
+$('dc-stop').addEventListener('mousedown', e => { e.preventDefault(); ctrlRelease(); });
+$('dc-stop').addEventListener('touchstart', e => { e.preventDefault(); ctrlRelease(); }, {passive:false});
+
+document.addEventListener('keydown', e => {
+  if (e.repeat || e.target.tagName === 'INPUT') return;
+  const map = {ArrowUp:'fwd', ArrowDown:'back', ArrowLeft:'left', ArrowRight:'right'};
+  if (map[e.key]) { e.preventDefault(); ctrlPress(map[e.key]); }
+  else if (e.key === ' ') { e.preventDefault(); ctrlRelease(); }
+});
+document.addEventListener('keyup', e => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) ctrlRelease();
+});
+
+// ── e-stop / logout ──────────────────────────────────────────────────────────
+function sendEstop() {
+  fetch('/estop', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({reset:false})}).catch(()=>{});
+}
+function resetEstop() {
+  fetch('/estop', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({reset:true})}).catch(()=>{});
+}
+function doLogout() {
+  if (!confirm('Leave the session? Another user can then take control.')) return;
+  fetch('/logout', {method:'POST'}).then(() => window.location.href = '/join/done').catch(()=>{});
+}
+
+// ── lidar radar ──────────────────────────────────────────────────────────────
+function drawLidar(pts, ts) {
+  const canvas = $('lidar-canvas'); if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W/2, cy = H/2, maxDist = 3.0;
+  const scale = (Math.min(W,H)/2 - 24) / maxDist;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0a0c14'; ctx.fillRect(0,0,W,H);
+  for (let r=1; r<=maxDist; r++) {
+    ctx.strokeStyle='#1e2538'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(cx,cy,r*scale,0,2*Math.PI); ctx.stroke();
+    ctx.fillStyle='#3a4560'; ctx.font='9px monospace'; ctx.textAlign='left';
+    ctx.fillText(r+'m', cx+r*scale+3, cy+4);
+  }
+  ctx.strokeStyle='#1e2538'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(cx,cy-maxDist*scale-8); ctx.lineTo(cx,cy+maxDist*scale+8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx-maxDist*scale-8,cy); ctx.lineTo(cx+maxDist*scale+8,cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,maxDist*scale,-3*Math.PI/4,-Math.PI/4); ctx.closePath();
+  ctx.fillStyle='#3b82f60a'; ctx.fill(); ctx.strokeStyle='#3b82f630'; ctx.lineWidth=1; ctx.stroke();
+  ctx.strokeStyle='#ef444470'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.arc(cx,cy,0.5*scale,0,2*Math.PI); ctx.stroke(); ctx.setLineDash([]);
+  if (!ts || age(ts) > 5) {
+    ctx.fillStyle='#3a4560'; ctx.font='13px monospace'; ctx.textAlign='center';
+    ctx.fillText('No LIDAR data', cx, cy+20); ctx.textAlign='left';
+    ctx.fillStyle='#3b82f6'; ctx.beginPath(); ctx.moveTo(cx,cy-9); ctx.lineTo(cx-6,cy+6); ctx.lineTo(cx+6,cy+6); ctx.closePath(); ctx.fill();
+    return;
+  }
+  for (const [angle, dist] of pts) {
+    const d = Math.min(dist, maxDist);
+    const px = cx + Math.sin(angle)*d*scale, py = cy + Math.cos(angle)*d*scale;
+    ctx.fillStyle = dist < 0.5 ? '#ef4444' : dist < 1.0 ? '#eab308' : '#22c55e';
+    ctx.beginPath(); ctx.arc(px, py, 2, 0, 2*Math.PI); ctx.fill();
+  }
+  ctx.fillStyle='#3b82f6'; ctx.beginPath(); ctx.moveTo(cx,cy-9); ctx.lineTo(cx-6,cy+6); ctx.lineTo(cx+6,cy+6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#3b82f6'; ctx.font='9px monospace'; ctx.textAlign='center'; ctx.fillText('FWD', cx, cy-maxDist*scale-8); ctx.textAlign='left';
+}
+</script>
+</body>
+</html>"""
+
+
+# ── Join page (invite code redemption, shown when auth is enabled) ───────────
+LOGIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TR45H Robot — Join</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+    --text: #e2e8f0; --muted: #8892a4;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308; --blue: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+         font-family: 'Segoe UI', system-ui, sans-serif;
+         display: flex; align-items: center; justify-content: center;
+         min-height: 100vh; padding: 16px; }
+  .login-card { background: var(--card); border: 1px solid var(--border);
+                border-radius: 12px; padding: 32px; width: 100%; max-width: 380px; }
+  .login-card h1 { font-size: 1.3rem; font-weight: 600; margin-bottom: 6px; }
+  .login-card .sub { font-size: .85rem; color: var(--muted); margin-bottom: 24px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: .75rem; font-weight: 600;
+                 text-transform: uppercase; letter-spacing: .5px;
+                 color: var(--muted); margin-bottom: 6px; }
+  .field input { width: 100%; padding: 10px 12px; border-radius: 8px;
+                 border: 1px solid var(--border); background: var(--bg);
+                 color: var(--text); font-size: .95rem; outline: none; }
+  .field input:focus { border-color: var(--blue); }
+  .btn { width: 100%; padding: 11px; border: none; border-radius: 8px;
+         background: var(--blue); color: #fff; font-size: .95rem;
+         font-weight: 600; cursor: pointer; margin-top: 8px; }
+  .btn:hover { opacity: .9; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .status { margin-bottom: 20px; padding: 12px; border-radius: 8px;
+            font-size: .85rem; line-height: 1.5; }
+  .status.occupied { background: rgba(234,179,8,.1); border: 1px solid rgba(234,179,8,.25);
+                     color: var(--yellow); }
+  .status.cooldown { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25);
+                     color: var(--red); }
+  .status.available { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.25);
+                      color: var(--green); }
+  .status.error { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25);
+                  color: var(--red); }
+  .status.invalid { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25);
+                    color: var(--red); }
+  .timer { font-variant-numeric: tabular-nums; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="login-card">
+  <h1>TR45H Robot</h1>
+  <p class="sub">Remote Control Access</p>
+  <div id="status-box"></div>
+  <form method="POST" action="/join" id="join-form" style="display:none">
+    <input type="hidden" name="code" value="__INVITE_CODE__">
+    <div class="field">
+      <label>Your Name</label>
+      <input type="text" name="name" placeholder="e.g. Alex" maxlength="20"
+             autocomplete="off" required>
+    </div>
+    <button class="btn" type="submit" id="join-btn">Take Control</button>
+  </form>
+</div>
+<script>
+const STATUS = __STATUS_JSON__;
+const box = document.getElementById('status-box');
+const form = document.getElementById('join-form');
+const btn = document.getElementById('join-btn');
+
+function countdown(secs, cb) {
+  const el = document.getElementById('cd');
+  const tick = () => {
+    if (secs <= 0) { location.reload(); return; }
+    const m = Math.floor(secs/60), s = secs%60;
+    el.textContent = m + ':' + String(s).padStart(2,'0');
+    secs--; setTimeout(tick, 1000);
+  }; tick();
+}
+
+if (STATUS.state === 'invalid') {
+  box.className = 'status invalid';
+  box.textContent = STATUS.message || 'Invalid or expired invite code.';
+} else if (STATUS.state === 'occupied') {
+  box.className = 'status occupied';
+  box.innerHTML = 'Someone is currently driving the robot.<br>Try again in <span class="timer" id="cd"></span>';
+  countdown(STATUS.remaining_s);
+} else if (STATUS.state === 'cooldown') {
+  box.className = 'status cooldown';
+  box.innerHTML = 'Your turn ended. You can reconnect in <span class="timer" id="cd"></span>';
+  countdown(STATUS.remaining_s);
+} else if (STATUS.state === 'error') {
+  box.className = 'status error';
+  box.textContent = STATUS.message || 'Something went wrong.';
+} else {
+  box.className = 'status available';
+  box.textContent = 'Robot is available! Enter your name to take control.';
+  form.style.display = 'block';
+}
+</script>
+</body>
+</html>"""
+
+
+# ── Admin page (LAN-only) ───────────────────────────────────────────────────
+ADMIN_HTML = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Robot Admin</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+    --text: #e2e8f0; --muted: #8892a4;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308; --blue: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text);
+         font-family: 'Segoe UI', system-ui, sans-serif; padding: 16px; max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 4px; }
+  .sub { font-size: .85rem; color: var(--muted); margin-bottom: 20px; }
+  .card { background: var(--card); border: 1px solid var(--border);
+          border-radius: 10px; padding: 16px; margin-bottom: 14px; }
+  .card-title { font-size: .68rem; font-weight: 700; letter-spacing: 1px;
+                text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+  .row { display: flex; justify-content: space-between; align-items: center;
+         margin-bottom: 8px; font-size: .85rem; }
+  .lbl { color: var(--muted); }
+  .val { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .green { color: var(--green); } .red { color: var(--red); }
+  .yellow { color: var(--yellow); } .muted { color: var(--muted); }
+  .btn { padding: 6px 14px; border: none; border-radius: 6px;
+         font-size: .8rem; font-weight: 600; cursor: pointer; }
+  .btn-red { background: rgba(239,68,68,.15); color: var(--red); }
+  .btn-red:hover { background: rgba(239,68,68,.25); }
+  .btn-blue { background: rgba(59,130,246,.15); color: var(--blue); }
+  .btn-blue:hover { background: rgba(59,130,246,.25); }
+  .btn-green { background: rgba(34,197,94,.15); color: var(--green); }
+  .btn-green:hover { background: rgba(34,197,94,.25); }
+  .settings-row { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+  .settings-row label { font-size: .8rem; color: var(--muted); min-width: 140px; }
+  .settings-row input { width: 80px; padding: 6px 8px; border-radius: 6px;
+                        border: 1px solid var(--border); background: var(--bg);
+                        color: var(--text); font-size: .85rem; text-align: center; }
+  table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: .7rem;
+       text-transform: uppercase; letter-spacing: .5px; padding: 6px 8px;
+       border-bottom: 1px solid var(--border); }
+  td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
+           font-size: .7rem; font-weight: 600; }
+  .badge-get { background: rgba(59,130,246,.15); color: var(--blue); }
+  .badge-post { background: rgba(234,179,8,.15); color: var(--yellow); }
+  .invite-link { background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+                 padding: 8px 12px; font-family: monospace; font-size: .8rem; word-break: break-all;
+                 color: var(--green); margin: 8px 0; cursor: pointer; }
+  .invite-link:hover { border-color: var(--green); }
+  .invite-row { display: flex; justify-content: space-between; align-items: center;
+                padding: 6px 0; border-bottom: 1px solid var(--border); font-size: .83rem; }
+  .invite-label-input { width: 140px; padding: 6px 8px; border-radius: 6px;
+                        border: 1px solid var(--border); background: var(--bg);
+                        color: var(--text); font-size: .83rem; }
+</style>
+</head>
+<body>
+<h1>Robot Admin</h1>
+<p class="sub">Session management, invites &amp; activity monitor</p>
+
+<div class="card">
+  <div class="card-title">Invite Codes</div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+    <input type="text" id="invite-label" class="invite-label-input" placeholder="Label (e.g. Alex)">
+    <button class="btn btn-green" onclick="genInvite()">Generate Invite</button>
+  </div>
+  <div id="invite-result"></div>
+  <div id="invite-list"><span class="muted">No active invites</span></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Active Session</div>
+  <div id="session-info"><span class="muted">Loading...</span></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Settings</div>
+  <div class="settings-row">
+    <label>Session timeout</label>
+    <input type="number" id="s-timeout" min="1" max="60" value="5">
+    <span class="muted" style="font-size:.8rem">min</span>
+  </div>
+  <div class="settings-row">
+    <label>Cooldown</label>
+    <input type="number" id="s-cooldown" min="0" max="120" value="10">
+    <span class="muted" style="font-size:.8rem">min</span>
+  </div>
+  <button class="btn btn-blue" onclick="saveSettings()">Save</button>
+</div>
+
+<div class="card">
+  <div class="card-title">Cooldowns</div>
+  <div id="cooldown-list"><span class="muted">None</span></div>
+</div>
+
+<div class="card">
+  <div class="card-title">Recent Activity (last 200)</div>
+  <div style="max-height:400px;overflow-y:auto">
+    <table>
+      <thead><tr><th>Time</th><th>IP</th><th>Method</th><th>Path</th><th>User</th></tr></thead>
+      <tbody id="activity-log"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function $(id){return document.getElementById(id)}
+function fmtTime(ts){
+  const d=new Date(ts*1000);
+  return d.toLocaleTimeString();
+}
+function fmtRemaining(s){
+  const m=Math.floor(s/60),sec=Math.floor(s)%60;
+  return m+':'+String(sec).padStart(2,'0');
+}
+
+async function genInvite(){
+  const label = $('invite-label').value.trim() || 'guest';
+  $('invite-result').innerHTML = '<span class="muted">Generating…</span>';
+  try {
+    const r = await fetch('/admin/invite',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({label:label})});
+    const d = await r.json();
+    if (d.ok) {
+      const link = location.origin + '/join/' + d.code;
+      $('invite-result').innerHTML =
+        '<div class="invite-link" onclick="navigator.clipboard.writeText(this.textContent);this.style.borderColor=\\x27#22c55e\\x27">' +
+        link + '</div>' +
+        '<div class="muted" style="font-size:.75rem;margin-bottom:8px">Click to copy. Send this link to ' + label + '.</div>';
+      $('invite-label').value = '';
+      poll();
+    } else {
+      $('invite-result').innerHTML = '<span class="red">Error: ' + (d.error||'unknown') + '</span>';
+    }
+  } catch(e) {
+    $('invite-result').innerHTML = '<span class="red">Request failed: ' + e.message + '</span>';
+  }
+}
+async function revokeInvite(code){
+  await fetch('/admin/revoke_invite',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})});
+  poll();
+}
+async function kick(){ await fetch('/admin/kick',{method:'POST'}); poll(); }
+async function clearCd(ip){
+  await fetch('/admin/clear_cooldown',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({ip:ip})});
+  poll();
+}
+async function saveSettings(){
+  await fetch('/admin/settings',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      session_minutes: parseInt($('s-timeout').value)||5,
+      cooldown_minutes: parseInt($('s-cooldown').value)||10
+    })});
+  poll();
+}
+
+async function poll(){
+  try {
+    const r = await fetch('/admin/data');
+    const d = await r.json();
+
+    // auth status
+    if (!d.auth_enabled) {
+      $('session-info').innerHTML = '<span class="muted">Auth disabled (LAN mode) — set DASHBOARD_PUBLIC=1 to enable</span>';
+    } else if (!d.session) {
+      $('session-info').innerHTML = '<span class="green">No active session — robot available</span>';
+    } else {
+      const s = d.session;
+      $('session-info').innerHTML =
+        '<div class="row"><span class="lbl">User</span><span class="val">'+s.user+'</span></div>' +
+        '<div class="row"><span class="lbl">IP</span><span class="val">'+s.ip+'</span></div>' +
+        '<div class="row"><span class="lbl">Connected</span><span class="val">'+fmtTime(s.login_time)+'</span></div>' +
+        '<div class="row"><span class="lbl">Time left</span><span class="val yellow">'+fmtRemaining(s.remaining_s)+'</span></div>' +
+        '<div style="margin-top:8px"><button class="btn btn-red" onclick="kick()">Kick User</button></div>';
+    }
+
+    // settings
+    $('s-timeout').value = d.session_minutes;
+    $('s-cooldown').value = d.cooldown_minutes;
+
+    // invites
+    if (d.invites && d.invites.length > 0) {
+      $('invite-list').innerHTML = d.invites.map(inv =>
+        '<div class="invite-row"><span><span class="val">'+inv.label+'</span> ' +
+        '<span class="muted" style="font-size:.75rem">'+inv.code.slice(0,8)+'...</span></span>' +
+        '<button class="btn btn-red" onclick="revokeInvite(&apos;'+inv.code+'&apos;)">Revoke</button></div>'
+      ).join('');
+    } else {
+      $('invite-list').innerHTML = '<span class="muted">No active invites</span>';
+    }
+
+    // cooldowns
+    if (d.cooldowns && d.cooldowns.length > 0) {
+      $('cooldown-list').innerHTML = d.cooldowns.map(c =>
+        '<div class="row"><span class="val">'+c.ip+'</span>' +
+        '<span class="yellow">'+fmtRemaining(c.remaining_s)+'</span>' +
+        '<button class="btn btn-red" onclick="clearCd(&apos;'+c.ip+'&apos;)">Clear</button></div>'
+      ).join('');
+    } else {
+      $('cooldown-list').innerHTML = '<span class="muted">None</span>';
+    }
+
+    // activity log
+    const tbody = $('activity-log');
+    tbody.innerHTML = (d.request_log||[]).slice().reverse().map(e =>
+      '<tr><td>'+fmtTime(e.ts)+'</td><td>'+e.ip+'</td>' +
+      '<td><span class="badge '+(e.method==='GET'?'badge-get':'badge-post')+'">'+e.method+'</span></td>' +
+      '<td>'+e.path+'</td><td>'+(e.user||'—')+'</td></tr>'
+    ).join('');
+
+  } catch(e) {}
+}
+poll(); setInterval(poll, 5000);
+</script>
+</body>
+</html>"""
+
+
 FLASHPICO_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1922,19 +2650,240 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass  # suppress per-request console noise
 
+    # ── auth / security helpers ──────────────────────────────────────────────
+
+    def _get_client_ip(self):
+        """Return real client IP (respects X-Forwarded-For from reverse proxy)."""
+        xff = self.headers.get('X-Forwarded-For')
+        if xff:
+            return xff.split(',')[0].strip()
+        return self.client_address[0]
+
+    @staticmethod
+    def _is_private_ip(ip_str):
+        try:
+            addr = ipaddress.ip_address(ip_str)
+            return any(addr in net for net in _PRIVATE_NETS)
+        except ValueError:
+            return False
+
+    def _get_session_token(self):
+        cookie_hdr = self.headers.get('Cookie', '')
+        try:
+            c = SimpleCookie(cookie_hdr)
+            return c['session'].value if 'session' in c else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _expire_session():
+        """Expire the active session if its time is up. Returns True if expired."""
+        global _active_session
+        with _session_lock:
+            if _active_session and time.time() >= _active_session['expires']:
+                ip = _active_session['ip']
+                _cooldowns[ip] = time.time() + _COOLDOWN_MINUTES * 60
+                _active_session = None
+                return True
+        return False
+
+    def _check_session(self):
+        """Validate cookie against active session. Returns session dict or None."""
+        self._expire_session()
+        token = self._get_session_token()
+        if not token:
+            return None
+        with _session_lock:
+            if _active_session and _active_session['token'] == token:
+                _active_session['last_seen'] = time.time()
+                return _active_session
+        return None
+
+    def _require_auth(self):
+        """If auth enabled and no valid session, show 401. Returns True if blocked."""
+        if not _AUTH_ENABLED:
+            return False
+        if self._is_private_ip(self._get_client_ip()):
+            return False  # LAN users never need a session
+        if self._check_session():
+            return False
+        if self.command == 'GET':
+            # Show a minimal "need invite" page instead of redirect
+            body = ('<!DOCTYPE html><html><head><meta charset="UTF-8">'
+                    '<meta name="viewport" content="width=device-width,initial-scale=1">'
+                    '<title>Access Required</title>'
+                    '<style>body{background:#0f1117;color:#8892a4;font-family:system-ui;'
+                    'display:flex;align-items:center;justify-content:center;min-height:100vh;'
+                    'text-align:center}h2{color:#e2e8f0;margin-bottom:8px}</style></head>'
+                    '<body><div><h2>Invite Required</h2>'
+                    '<p>You need an invite link to control this robot.</p>'
+                    '</div></body></html>')
+            self._respond(401, 'text/html; charset=utf-8', body.encode())
+        else:
+            self._respond(401, 'application/json', b'{"error":"Not authenticated"}')
+        return True
+
+    def _check_rate_limit(self):
+        """Sliding-window rate limit for /cmd: 20 req/s per IP. Returns True if limited."""
+        ip = self._get_client_ip()
+        now = time.time()
+        if ip not in _cmd_rate:
+            _cmd_rate[ip] = deque()
+        q = _cmd_rate[ip]
+        while q and q[0] < now - 1.0:
+            q.popleft()
+        if len(q) >= 20:
+            self._respond(429, 'application/json', b'{"error":"Rate limited"}')
+            return True
+        q.append(now)
+        return False
+
+    def _log_request(self):
+        """Append to audit log and ROS logger."""
+        ip = self._get_client_ip()
+        user = None
+        with _session_lock:
+            if _active_session:
+                token = self._get_session_token()
+                if token and _active_session.get('token') == token:
+                    user = _active_session.get('user')
+        entry = {'ts': time.time(), 'ip': ip, 'method': self.command,
+                 'path': self.path, 'user': user}
+        _request_log.append(entry)
+        if self.command == 'POST' and _node:
+            _node.get_logger().info(
+                f'[AUDIT] {ip} {self.command} {self.path} {user or "anon"}')
+
+    def _login_status(self):
+        """Return status dict for the login page."""
+        ip = self._get_client_ip()
+        self._expire_session()
+        now = time.time()
+        # check cooldown
+        if ip in _cooldowns:
+            remaining = _cooldowns[ip] - now
+            if remaining > 0:
+                return {'state': 'cooldown', 'remaining_s': int(remaining)}
+            else:
+                del _cooldowns[ip]
+        # check occupied
+        with _session_lock:
+            if _active_session:
+                remaining = _active_session['expires'] - now
+                return {'state': 'occupied', 'remaining_s': max(0, int(remaining))}
+        return {'state': 'available'}
+
+    # ── main request handlers ────────────────────────────────────────────────
+
     def do_GET(self):
+        self._log_request()
+
+        # ── invite join page (/join/<code>) ──────────────────────────────
+        if self.path.startswith('/join/'):
+            if not _AUTH_ENABLED:
+                self.send_response(302)
+                self.send_header('Location', '/')
+                self.end_headers()
+                return
+            code = self.path[6:]  # strip '/join/'
+            with _invite_lock:
+                valid = code in _invite_codes
+            if not valid:
+                status = {'state': 'invalid', 'message': 'Invalid or expired invite code.'}
+            else:
+                status = self._login_status()
+            html = LOGIN_HTML.replace('__STATUS_JSON__', json.dumps(status))
+            html = html.replace('__INVITE_CODE__', code if valid else '')
+            self._respond(200, 'text/html; charset=utf-8', html.encode())
+            return
+
+        # ── admin routes (LAN-only) ─────────────────────────────────────
+        if self.path.startswith('/admin'):
+            if not self._is_private_ip(self._get_client_ip()):
+                self._respond(403, 'application/json',
+                              b'{"error":"Admin access restricted to LAN"}')
+                return
+            if self.path == '/admin':
+                self._respond(200, 'text/html; charset=utf-8', ADMIN_HTML.encode())
+                return
+            if self.path == '/admin/data':
+                self._expire_session()
+                now = time.time()
+                data = {'auth_enabled': _AUTH_ENABLED,
+                        'session_minutes': _SESSION_MINUTES,
+                        'cooldown_minutes': _COOLDOWN_MINUTES}
+                with _session_lock:
+                    if _active_session:
+                        s = _active_session
+                        data['session'] = {
+                            'user': s['user'], 'ip': s['ip'],
+                            'login_time': s['login_time'],
+                            'remaining_s': max(0, s['expires'] - now)}
+                    else:
+                        data['session'] = None
+                cds = []
+                for ip, until in list(_cooldowns.items()):
+                    rem = until - now
+                    if rem > 0:
+                        cds.append({'ip': ip, 'remaining_s': int(rem)})
+                    else:
+                        del _cooldowns[ip]
+                data['cooldowns'] = cds
+                with _invite_lock:
+                    data['invites'] = [{'code': c, 'label': v['label'],
+                                        'created': v['created']}
+                                       for c, v in _invite_codes.items()]
+                data['request_log'] = list(_request_log)
+                self._respond(200, 'application/json', json.dumps(data).encode())
+                return
+            self.send_response(404); self.end_headers()
+            return
+
+        # ── block dangerous pages in public mode ─────────────────────────
+        if _AUTH_ENABLED and self.path in _DANGEROUS_PAGES:
+            self._respond(403, 'application/json',
+                          b'{"error":"Disabled in public mode"}')
+            return
+
+        # ── auth gate for all other pages ────────────────────────────────
+        if self._require_auth():
+            return
+
+        # ── normal routes ────────────────────────────────────────────────
         if self.path == '/metrics':
             with _lock:
                 body = json.dumps(_metrics).encode()
             self._respond(200, 'application/json', body)
+        elif self.path == '/session/info':
+            self._expire_session()
+            with _session_lock:
+                if _active_session:
+                    token = self._get_session_token()
+                    if token and _active_session.get('token') == token:
+                        data = {'user': _active_session['user'],
+                                'remaining_s': max(0, int(_active_session['expires'] - time.time()))}
+                        self._respond(200, 'application/json', json.dumps(data).encode())
+                        return
+            self._respond(401, 'application/json', b'{"error":"No session"}')
+        elif self.path == '/public':
+            self._respond(200, 'text/html; charset=utf-8', PUBLIC_HTML.encode())
         elif self.path in ('/', '/index.html'):
+            # Full dashboard is LAN-only — always redirect non-LAN to /public
+            if not self._is_private_ip(self._get_client_ip()):
+                self.send_response(302)
+                self.send_header('Location', '/public')
+                self.end_headers()
+                return
             self._respond(200, 'text/html; charset=utf-8', DASHBOARD_HTML.encode())
-        elif self.path == '/remote':
-            self._respond(200, 'text/html; charset=utf-8', REMOTE_HTML.encode())
-        elif self.path == '/follow':
-            self._respond(200, 'text/html; charset=utf-8', FOLLOW_HTML.encode())
-        elif self.path == '/mfollow':
-            self._respond(200, 'text/html; charset=utf-8', MFOLLOW_HTML.encode())
+        elif self.path in ('/remote', '/follow', '/mfollow'):
+            # LAN-only pages — redirect non-LAN to /public
+            if not self._is_private_ip(self._get_client_ip()):
+                self.send_response(302)
+                self.send_header('Location', '/public')
+                self.end_headers()
+                return
+            html = REMOTE_HTML if self.path in ('/remote', '/mfollow') else FOLLOW_HTML
+            self._respond(200, 'text/html; charset=utf-8', html.encode())
         elif self.path == '/flashpico':
             self._respond(200, 'text/html; charset=utf-8', FLASHPICO_HTML.encode())
         elif self.path == '/pico/status':
@@ -1953,7 +2902,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/plain; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))
             self.send_header('Content-Disposition', 'attachment; filename="robot_log.txt"')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Origin', _CORS_ORIGIN)
             self.end_headers()
             self.wfile.write(body)
         elif self.path.startswith('/logs'):
@@ -1969,11 +2918,169 @@ class _Handler(BaseHTTPRequestHandler):
         else:
             self.send_response(404); self.end_headers()
 
+    def _read_json_body(self):
+        length = int(self.headers.get('Content-Length', 0))
+        return json.loads(self.rfile.read(length)) if length else {}
+
     def do_POST(self):
+        global _active_session, _SESSION_MINUTES, _COOLDOWN_MINUTES
+        self._log_request()
+
+        # ── invite join (/join) ──────────────────────────────────────────
+        if self.path == '/join':
+            if not _AUTH_ENABLED:
+                self._respond(400, 'application/json', b'{"error":"Auth not enabled"}')
+                return
+            length = int(self.headers.get('Content-Length', 0))
+            raw = self.rfile.read(length).decode() if length else ''
+            # Parse form data (application/x-www-form-urlencoded)
+            params = dict(parse_qs(raw, keep_blank_values=True))
+            code = params.get('code', [''])[0]
+            name = params.get('name', [''])[0].strip()[:20]
+            if not name:
+                name = 'Guest'
+            ip = self._get_client_ip()
+            # Validate invite code
+            with _invite_lock:
+                if code not in _invite_codes:
+                    self.send_response(302)
+                    self.send_header('Location', f'/join/{code}')
+                    self.end_headers()
+                    return
+            # Check cooldown
+            self._expire_session()
+            now = time.time()
+            if ip in _cooldowns and _cooldowns[ip] > now:
+                self.send_response(302)
+                self.send_header('Location', f'/join/{code}')
+                self.end_headers()
+                return
+            # Check occupied
+            with _session_lock:
+                if _active_session:
+                    self.send_response(302)
+                    self.send_header('Location', f'/join/{code}')
+                    self.end_headers()
+                    return
+            # Create session and consume invite
+            token = secrets.token_hex(32)
+            with _session_lock:
+                if _active_session:  # double-check under lock
+                    self.send_response(302)
+                    self.send_header('Location', f'/join/{code}')
+                    self.end_headers()
+                    return
+                _active_session = {
+                    'token': token, 'user': name, 'ip': ip,
+                    'login_time': now,
+                    'expires': now + _SESSION_MINUTES * 60,
+                    'last_seen': now,
+                }
+            with _invite_lock:
+                _invite_codes.pop(code, None)
+            if _node:
+                _node.get_logger().info(f'[AUTH] Session started: {name} from {ip}')
+            self.send_response(302)
+            self.send_header('Location', '/')
+            self.send_header('Set-Cookie',
+                             f'session={token}; HttpOnly; SameSite=Strict; Path=/; '
+                             f'Max-Age={int(_SESSION_MINUTES * 60)}')
+            self.end_headers()
+            return
+
+        # ── logout ───────────────────────────────────────────────────────
+        if self.path == '/logout':
+            token = self._get_session_token()
+            ip = self._get_client_ip()
+            with _session_lock:
+                if _active_session and _active_session.get('token') == token:
+                    if _node:
+                        _node.get_logger().info(
+                            f'[AUTH] Session ended: {_active_session["user"]} from {ip}')
+                    _active_session = None
+                    _cooldowns[ip] = time.time() + _COOLDOWN_MINUTES * 60
+            self.send_response(302)
+            self.send_header('Location', '/')
+            self.send_header('Set-Cookie', 'session=; HttpOnly; Path=/; Max-Age=0')
+            self.end_headers()
+            return
+
+        # ── admin routes (LAN-only) ──────────────────────────────────────
+        if self.path.startswith('/admin'):
+            if not self._is_private_ip(self._get_client_ip()):
+                self._respond(403, 'application/json',
+                              b'{"error":"Admin access restricted to LAN"}')
+                return
+            if self.path == '/admin/invite':
+                data = self._read_json_body()
+                label = str(data.get('label', 'guest'))[:20].strip() or 'guest'
+                code = secrets.token_urlsafe(16)
+                with _invite_lock:
+                    _invite_codes[code] = {'label': label, 'created': time.time()}
+                if _node:
+                    _node.get_logger().info(f'[ADMIN] Invite created for {label}: {code[:8]}...')
+                self._respond(200, 'application/json',
+                              json.dumps({'ok': True, 'code': code, 'label': label}).encode())
+                return
+            if self.path == '/admin/revoke_invite':
+                data = self._read_json_body()
+                code = data.get('code', '')
+                with _invite_lock:
+                    removed = _invite_codes.pop(code, None)
+                self._respond(200, 'application/json',
+                              json.dumps({'ok': bool(removed)}).encode())
+                return
+            if self.path == '/admin/kick':
+                with _session_lock:
+                    if _active_session:
+                        ip = _active_session['ip']
+                        if _node:
+                            _node.get_logger().info(
+                                f'[ADMIN] Kicked {_active_session["user"]} from {ip}')
+                        _active_session = None
+                        _cooldowns[ip] = time.time() + _COOLDOWN_MINUTES * 60
+                self._respond(200, 'application/json', b'{"ok":true}')
+                return
+            if self.path == '/admin/clear_cooldown':
+                data = self._read_json_body()
+                ip = data.get('ip', '')
+                _cooldowns.pop(ip, None)
+                self._respond(200, 'application/json', b'{"ok":true}')
+                return
+            if self.path == '/admin/settings':
+                data = self._read_json_body()
+                sm = data.get('session_minutes')
+                cm = data.get('cooldown_minutes')
+                if sm is not None:
+                    _SESSION_MINUTES = max(1, min(60, int(sm)))
+                if cm is not None:
+                    _COOLDOWN_MINUTES = max(0, min(120, int(cm)))
+                self._respond(200, 'application/json',
+                              json.dumps({'ok': True,
+                                          'session_minutes': _SESSION_MINUTES,
+                                          'cooldown_minutes': _COOLDOWN_MINUTES}).encode())
+                return
+            self.send_response(404); self.end_headers()
+            return
+
+        # ── block dangerous endpoints in public mode ─────────────────────
+        if _AUTH_ENABLED and self.path in _DANGEROUS_ENDPOINTS:
+            self._respond(403, 'application/json',
+                          b'{"error":"Disabled in public mode"}')
+            return
+
+        # ── auth gate for all other POST endpoints ───────────────────────
+        if self._require_auth():
+            return
+
+        # ── rate limit /cmd ──────────────────────────────────────────────
+        if self.path == '/cmd' and self._check_rate_limit():
+            return
+
+        # ── normal routes ────────────────────────────────────────────────
         if self.path == '/cmd':
             try:
-                length = int(self.headers.get('Content-Length', 0))
-                data   = json.loads(self.rfile.read(length))
+                data = self._read_json_body()
                 if _node is not None:
                     twist = Twist()
                     twist.linear.x  = float(data.get('linear',  0.0))
@@ -1985,8 +3092,7 @@ class _Handler(BaseHTTPRequestHandler):
                               json.dumps({'error': str(exc)}).encode())
         elif self.path == '/nav':
             try:
-                length = int(self.headers.get('Content-Length', 0))
-                data   = json.loads(self.rfile.read(length))
+                data = self._read_json_body()
                 if _node is not None:
                     req = SetBool.Request()
                     req.data = bool(data.get('autonomous', False))
@@ -1997,8 +3103,7 @@ class _Handler(BaseHTTPRequestHandler):
                               json.dumps({'error': str(exc)}).encode())
         elif self.path == '/estop':
             try:
-                length = int(self.headers.get('Content-Length', 0))
-                data   = json.loads(self.rfile.read(length))
+                data = self._read_json_body()
                 if _node is not None:
                     req = Trigger.Request()
                     if data.get('reset', False):
@@ -2011,8 +3116,7 @@ class _Handler(BaseHTTPRequestHandler):
                               json.dumps({'error': str(exc)}).encode())
         elif self.path == '/follow_me':
             try:
-                length = int(self.headers.get('Content-Length', 0))
-                data   = json.loads(self.rfile.read(length))
+                data = self._read_json_body()
                 if _node is not None:
                     req = SetBool.Request()
                     req.data = bool(data.get('enabled', False))
@@ -2056,7 +3160,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(body)))
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', _CORS_ORIGIN)
+        if 'text/html' in ctype:
+            self.send_header('Cache-Control', 'no-store')
         self.end_headers()
         self.wfile.write(body)
 
